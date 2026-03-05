@@ -198,8 +198,7 @@ class LossDDNet:
         '''
 
         self.criterion1 = nn.MSELoss()
-        ew = torch.from_numpy(np.array(entropy_weight).astype(np.float32)).cuda()
-        self.criterion2 = nn.CrossEntropyLoss(weight = ew)    # For multi-classification, the current issue is a binary problem (either black or white).
+        self.entropy_weight = torch.tensor(entropy_weight, dtype=torch.float32)
         self.weights = weights
 
     def __call__(self, outputs1, outputs2, targets1, targets2):
@@ -212,7 +211,11 @@ class LossDDNet:
         :return:
         '''
         mse = self.criterion1(outputs1, targets1)
-        cross = self.criterion2(outputs2, torch.squeeze(targets2).long())
+        cross = F.cross_entropy(
+            outputs2,
+            torch.squeeze(targets2).long(),
+            weight=self.entropy_weight.to(outputs2.device)
+        )
 
         criterion = (self.weights[0] * mse + self.weights[1] * cross)
 

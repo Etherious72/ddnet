@@ -18,6 +18,7 @@ import lpips
 import numpy as np
 import torch
 import torch.utils.data as data_utils
+import os
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -76,14 +77,18 @@ def batch_test(model_path, model_type = "DDNet"):
 
     counter = 0
 
-    lpips_object = lpips.LPIPS(net='alex', version="0.1")
+    # Legacy behavior: lpips_object = lpips.LPIPS(net='alex', version="0.1")
+    lpips_object = lpips.LPIPS(net='alex', version="0.1").to(device)
 
     cur_node_time = time.time()
     for i, (seis_image, gt_vmodel) in enumerate(loader):
 
-        if torch.cuda.is_available():
-            seis_image = seis_image.cuda(non_blocking=True)
-            gt_vmodel = gt_vmodel.cuda(non_blocking=True)
+        # Legacy behavior:
+        # if torch.cuda.is_available():
+        #     seis_image = seis_image.cuda(non_blocking=True)
+        #     gt_vmodel = gt_vmodel.cuda(non_blocking=True)
+        seis_image = seis_image.to(device, non_blocking=device.type == "cuda")
+        gt_vmodel = gt_vmodel.to(device, non_blocking=device.type == "cuda")
 
         # Prediction
         model_net.eval()
@@ -106,7 +111,9 @@ def batch_test(model_path, model_type = "DDNet"):
         gt_vmodel = gt_vmodel.cpu().detach().numpy()
 
         # Calculate MSE, MAE, UQI and LPIPS of the current batch
-        for k in range(test_batch_size):
+        # Legacy behavior: for k in range(test_batch_size):
+        cur_batch = pd_vmodel.shape[0]
+        for k in range(cur_batch):
 
             pd_vmodel_of_k = pd_vmodel[k, 0, :, :]
             gt_vmodel_of_k = gt_vmodel[k, 0, :, :]
@@ -155,13 +162,16 @@ def single_test(model_path, select_id, train_or_test = "test", model_type = "DDN
         max_velocity, min_velocity = np.max(velocity_model), np.min(velocity_model)
         velocity_model = (velocity_model - np.min(velocity_model)) / (np.max(velocity_model) - np.min(velocity_model))
 
-    lpips_object = lpips.LPIPS(net='alex', version="0.1")
+    # Legacy behavior: lpips_object = lpips.LPIPS(net='alex', version="0.1")
+    lpips_object = lpips.LPIPS(net='alex', version="0.1").to(device)
 
 
     # Convert numpy to tensor and load it to GPU
     seismic_data_tensor = torch.from_numpy(np.array([seismic_data])).float()
-    if torch.cuda.is_available():
-        seismic_data_tensor = seismic_data_tensor.cuda(non_blocking=True)
+    # Legacy behavior:
+    # if torch.cuda.is_available():
+    #     seismic_data_tensor = seismic_data_tensor.cuda(non_blocking=True)
+    seismic_data_tensor = seismic_data_tensor.to(device, non_blocking=device.type == "cuda")
 
     # Prediction
     model_net.eval()
@@ -207,11 +217,11 @@ def single_test(model_path, select_id, train_or_test = "test", model_type = "DDN
 if __name__ == "__main__":
     batch_of_single = 1
     # |DDNet|DDNet70|InversionNet|FCNVMB|SDNet|SDNet70|
-    model_type = "DDNet"
+    model_type = "DDNet70"
 
     if batch_of_single == 1:
         # Batch test #
-        batch_test("...", model_type=model_type)
+        batch_test("models\CurveFaultAModel\CurveFaultA_CLStage1_TrSize3_AllEpo10_CurEpo5.pkl", model_type=model_type)
     else:
         # Single test #
         if dataset_name in ["SEGSalt", "SEGSimulation"]:

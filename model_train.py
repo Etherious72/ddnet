@@ -22,6 +22,7 @@ import torch
 import torch.utils.data as data_utils
 import gc
 import torch.nn.functional as F
+import os
 
 def determine_network(external_model_src="", model_type="DDNet"):
     '''
@@ -34,7 +35,9 @@ def determine_network(external_model_src="", model_type="DDNet"):
     :return:                    A triplet: model object, GPU environment object and optimizer
     '''
 
-    cuda_available = torch.cuda.is_available()
+    force_cpu = os.environ.get("DDNET_FORCE_CPU", "0") == "1"
+    # Legacy behavior: cuda_available = torch.cuda.is_available()
+    cuda_available = torch.cuda.is_available() and not force_cpu
     device = torch.device("cuda" if cuda_available else "cpu")
     gpus = [0]
 
@@ -74,12 +77,15 @@ def determine_network(external_model_src="", model_type="DDNet"):
         exit(0)
 
     # Inherit the previous network structure
-    if external_model_src is not "":
+    if external_model_src != "":
         net_model = model_reader(net=net_model, device=device, save_src=external_model_src)
 
     # Allocate GPUs and set optimizers
-    if torch.cuda.is_available():
+    if cuda_available:
+        # Legacy behavior: net_model = torch.nn.DataParallel(net_model.cuda(), device_ids=gpus)
         net_model = torch.nn.DataParallel(net_model.cuda(), device_ids=gpus)
+    else:
+        net_model = net_model.to(device)
 
     optimizer = torch.optim.Adam(net_model.parameters(), lr=learning_rate)
 
@@ -99,6 +105,7 @@ def load_dataset(stage = 3):
         data_set, label_sets = batch_read_matfile(data_dir, 1, train_size, "train")
     else:
         data_set, label_sets = batch_read_npyfile(data_dir, 1, ceil(train_size / 500), "train")
+        # data_set, label_sets = batch_read_npyfile(data_dir, 1, 3, "train")
         for i in range(data_set.shape[0]):
             vm = label_sets[0][i][0]
             label_sets[0][i][0] = (vm - np.min(vm)) / (np.max(vm) - np.min(vm))
@@ -172,6 +179,8 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
 
     model_save_name = "{}_{}_TrSize{}_AllEpo{}".format(dataset_name, key_word, train_size, cur_epochs)
 
+    model_device = next(model.parameters()).device
+
     for epoch in range(cur_epochs):
         # Training for the current epoch
         loss_of_epoch = 0.0
@@ -185,10 +194,14 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
             model.train()
 
             # Load to GPU
-            if torch.cuda.is_available():
-                images = images.cuda(non_blocking=True)
-                labels = labels.cuda(non_blocking=True)
-                contours_labels = contours_labels.cuda(non_blocking=True)
+            # Legacy behavior:
+            # if torch.cuda.is_available():
+            #     images = images.cuda(non_blocking=True)
+            #     labels = labels.cuda(non_blocking=True)
+            #     contours_labels = contours_labels.cuda(non_blocking=True)
+            images = images.to(model_device, non_blocking=model_device.type == "cuda")
+            labels = labels.to(model_device, non_blocking=model_device.type == "cuda")
+            contours_labels = contours_labels.to(model_device, non_blocking=model_device.type == "cuda")
 
             # Gradient cache clearing
             optimizer.zero_grad()
@@ -325,4 +338,5 @@ def curriculum_learning_training(model_type):
     print("training runtime: {}s".format(all_training_time))
 
 if __name__ == "__main__":
-    curriculum_learning_training("DDNet70")
+    curriculum_learning_training(model_type)
+    # main_train里的训练参数在param_config里更改

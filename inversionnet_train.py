@@ -9,29 +9,37 @@ import torch
 import torch.nn as nn
 import torch.utils.data as data_utils
 import time
+import os
 
 train_or_test = "train"
 device_ids = [0]
-device = torch.device("cuda")
-LearnRate = 0.0001
-Epochs = 120
-TrainSize = 48000
+force_cpu = os.environ.get("DDNET_FORCE_CPU", "0") == "1" # 是否强制 CPU。环境变量 DDNET_FORCE_CPU=1 时，即使有 GPU 也走 CPU。
+# Legacy behavior: device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() and not force_cpu else "cpu")
+LearnRate = 0.0001 # 学习率
+# Epochs = 120
+Epochs = 2 # 训练轮数
+TrainSize = 500 # 训练数据条数，每个.npy文件有500条数据
 BatchSize = 128
 
 external_model_src = r""
 InvNet = InversionNet()               # 申请网络
 
-if external_model_src is not "":
+if external_model_src != "":
     InvNet = model_reader(net=InvNet, device=device, save_src=external_model_src)
 
-if torch.cuda.is_available():
+if device.type == "cuda":
+    # Legacy behavior: InvNet = torch.nn.DataParallel(InvNet, device_ids=device_ids).cuda()
     InvNet = torch.nn.DataParallel(InvNet, device_ids=device_ids).cuda()
+else:
+    InvNet = InvNet.to(device)
 
 optimizer = torch.optim.Adam(InvNet.parameters(), lr = LearnRate)
 optimizer.zero_grad()
 
 print("---------------------------------")
 print("· Loading the datasets...")
+
 
 data_set, label_sets = batch_read_npyfile(data_dir, 1, ceil(TrainSize / 500), "train")
 
@@ -57,7 +65,8 @@ modelname = prefix + dataset_name + tagM1 + tagM2 + tagM3
 loss_of_stage = 0.0
 step = int(TrainSize / BatchSize)
 start = time.time()
-save_times = 12
+# save_times = 12
+save_times = 1 # 计划把模型分几次保存
 save_epoch = Epochs // save_times
 
 for epoch in range(Epochs):
@@ -66,9 +75,12 @@ for epoch in range(Epochs):
     for i, (images, labels) in enumerate(seis_and_vm_loader):
         iteration = epoch * step + i + 1
 
-        if torch.cuda.is_available():
-            images = images.cuda(non_blocking=True)
-            labels = labels.cuda(non_blocking=True)
+        # Legacy behavior:
+        # if torch.cuda.is_available():
+        #     images = images.cuda(non_blocking=True)
+        #     labels = labels.cuda(non_blocking=True)
+        images = images.to(device, non_blocking=device.type == "cuda")
+        labels = labels.to(device, non_blocking=device.type == "cuda")
 
         optimizer.zero_grad()
         InvNet.train()

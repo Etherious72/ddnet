@@ -11,6 +11,7 @@ Created on 2023
 from math import ceil
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 NORM_LAYERS = { 'bn': nn.BatchNorm2d, 'in': nn.InstanceNorm2d, 'ln': nn.LayerNorm }
 

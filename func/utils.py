@@ -310,7 +310,8 @@ def model_reader(net, device, save_src='./models/SEGSimulation/model_name.pkl'):
 
     print("The external .pkl model is about to be imported")
     print("Read file: {}".format(save_src))
-    model = torch.load(save_src)
+    # Legacy CUDA-dependent loading (kept for reference): model = torch.load(save_src)
+    model = torch.load(save_src, map_location=device)
     try:                    # Attempt to do a network read
         net.load_state_dict(model)
     except RuntimeError:
@@ -475,6 +476,13 @@ def run_lpips(GT, P, lp):
     :param lp:      LPIPS related objects
     :return:
     '''
-    GT_tensor = torch.from_numpy(GT)
-    P_tensor = torch.from_numpy(P)
+    lp_device = next(lp.parameters()).device
+
+    GT_tensor = torch.from_numpy(GT).float().unsqueeze(0).unsqueeze(0)
+    P_tensor = torch.from_numpy(P).float().unsqueeze(0).unsqueeze(0)
+
+    # LPIPS expects 3-channel NCHW input.
+    GT_tensor = GT_tensor.repeat(1, 3, 1, 1).to(lp_device)
+    P_tensor = P_tensor.repeat(1, 3, 1, 1).to(lp_device)
+
     return lp.forward(GT_tensor, P_tensor).item()

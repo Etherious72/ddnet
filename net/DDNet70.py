@@ -217,8 +217,7 @@ class LossDDNet:
         '''
 
         self.criterion1 = nn.MSELoss()
-        ew = torch.from_numpy(np.array(entropy_weight).astype(np.float32)).cuda()
-        self.criterion2 = nn.CrossEntropyLoss(weight = ew)    # For multi-classification, the current issue is a binary problem (either black or white).
+        self.entropy_weight = torch.tensor(entropy_weight, dtype=torch.float32)
         self.weights = weights
 
     def __call__(self, outputs1, outputs2, targets1, targets2):
@@ -231,7 +230,11 @@ class LossDDNet:
         :return:
         '''
         mse = self.criterion1(outputs1, targets1)
-        cross = self.criterion2(outputs2, torch.squeeze(targets2).long())
+        cross = F.cross_entropy(
+            outputs2,
+            torch.squeeze(targets2).long(),
+            weight=self.entropy_weight.to(outputs2.device)
+        )
 
         criterion = (self.weights[0] * mse + self.weights[1] * cross)
 
@@ -266,15 +269,15 @@ class DDNet70Model(nn.Module):
 
         self.center = unetDown(256, 512, self.is_batchnorm)
 
-        self.dc1_up5 = unetUp1(512, 256, output_lim=[9, 9], is_deconv=self.is_deconv)
-        self.dc1_up4 = unetUp1(256, 128, output_lim=[18, 18], is_deconv=self.is_deconv)
-        self.dc1_up3 = netUp1(128, 64, output_lim=[35, 35], is_deconv=self.is_deconv)
-        self.dc1_up2 = netUp1(64, 32, output_lim=[70, 70], is_deconv=self.is_deconv)
+        self.dc1_up5 = unetUp(512, 256, output_lim=[9, 9], is_deconv=self.is_deconv)
+        self.dc1_up4 = unetUp(256, 128, output_lim=[18, 18], is_deconv=self.is_deconv)
+        self.dc1_up3 = netUp(128, 64, output_lim=[35, 35], is_deconv=self.is_deconv)
+        self.dc1_up2 = netUp(64, 32, output_lim=[70, 70], is_deconv=self.is_deconv)
 
-        self.dc2_up5 = unetUp2(512, 256, output_lim=[9, 9], is_deconv=self.is_deconv)
-        self.dc2_up4 = unetUp2(256, 128, output_lim=[18, 18], is_deconv=self.is_deconv)
-        self.dc2_up3 = netUp2(128, 64, output_lim=[35, 35], is_deconv=self.is_deconv)
-        self.dc2_up2 = netUp2(64, 32, output_lim=[70, 70], is_deconv=self.is_deconv)
+        self.dc2_up5 = unetUp(512, 256, output_lim=[9, 9], is_deconv=self.is_deconv)
+        self.dc2_up4 = unetUp(256, 128, output_lim=[18, 18], is_deconv=self.is_deconv)
+        self.dc2_up3 = netUp(128, 64, output_lim=[35, 35], is_deconv=self.is_deconv)
+        self.dc2_up2 = netUp(64, 32, output_lim=[70, 70], is_deconv=self.is_deconv)
 
         self.dc1_final = ConvBlock_Tanh(32, self.n_classes)
         self.dc2_final = ConvBlock_Tanh(32, 2)
