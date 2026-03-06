@@ -1,6 +1,7 @@
 from func.datasets_reader import batch_read_npyfile
 from net.InversionNet import InversionNet
 from func.utils import model_reader
+from func.device_selector import get_runtime_device
 from path_config import *
 from math import ceil
 
@@ -9,27 +10,25 @@ import torch
 import torch.nn as nn
 import torch.utils.data as data_utils
 import time
-import os
 
 train_or_test = "train"
 device_ids = [0]
-force_cpu = os.environ.get("DDNET_FORCE_CPU", "0") == "1" # 是否强制 CPU。环境变量 DDNET_FORCE_CPU=1 时，即使有 GPU 也走 CPU。
-# Legacy behavior: device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cuda" if torch.cuda.is_available() and not force_cpu else "cpu")
+device, use_cuda, resolved_mode = get_runtime_device(device_mode)
+print("[Device] mode={} resolved={} cuda_available={}".format(resolved_mode, device.type, torch.cuda.is_available()))
 LearnRate = 0.0001 # 学习率
 # Epochs = 120
 Epochs = 2 # 训练轮数
-TrainSize = 500 # 训练数据条数，每个.npy文件有500条数据
+TrainSize = 500 # 训练数据条数，每个 .npy 文件包含 500 条数据
 BatchSize = 128
 
 external_model_src = r""
-InvNet = InversionNet()               # 申请网络
+InvNet = InversionNet()               # 初始化网络
 
 if external_model_src != "":
     InvNet = model_reader(net=InvNet, device=device, save_src=external_model_src)
 
-if device.type == "cuda":
-    # Legacy behavior: InvNet = torch.nn.DataParallel(InvNet, device_ids=device_ids).cuda()
+if use_cuda:
+    # 旧版本写法：InvNet = torch.nn.DataParallel(InvNet, device_ids=device_ids).cuda()
     InvNet = torch.nn.DataParallel(InvNet, device_ids=device_ids).cuda()
 else:
     InvNet = InvNet.to(device)
@@ -43,7 +42,7 @@ print("· Loading the datasets...")
 
 data_set, label_sets = batch_read_npyfile(data_dir, 1, ceil(TrainSize / 500), "train")
 
-print("Normalization in progress...")
+print("正在进行归一化...")
 
 for i in range(data_set.shape[0]):
     vm = label_sets[0][i][0]
@@ -66,7 +65,7 @@ loss_of_stage = 0.0
 step = int(TrainSize / BatchSize)
 start = time.time()
 # save_times = 12
-save_times = 1 # 计划把模型分几次保存
+save_times = 1 # 计划将模型分几次保存
 save_epoch = Epochs // save_times
 
 for epoch in range(Epochs):
@@ -75,7 +74,7 @@ for epoch in range(Epochs):
     for i, (images, labels) in enumerate(seis_and_vm_loader):
         iteration = epoch * step + i + 1
 
-        # Legacy behavior:
+        # 旧版本写法：
         # if torch.cuda.is_available():
         #     images = images.cuda(non_blocking=True)
         #     labels = labels.cuda(non_blocking=True)

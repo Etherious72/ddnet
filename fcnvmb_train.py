@@ -1,6 +1,7 @@
 from func.datasets_reader import batch_read_matfile, batch_read_npyfile
 from net.FCNVMB import FCNVMB
 from func.utils import model_reader
+from func.device_selector import get_runtime_device
 from path_config import *
 
 import numpy as np
@@ -8,18 +9,16 @@ import torch
 import torch.utils.data as data_utils
 import torch.nn.functional as F
 import time
-import os
 
 train_or_test = "train"
 device_ids = [0]
-force_cpu = os.environ.get("DDNET_FORCE_CPU", "0") == "1"
-# Legacy behavior: device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cuda" if torch.cuda.is_available() and not force_cpu else "cpu")
+device, use_cuda, resolved_mode = get_runtime_device(device_mode)
+print("[Device] mode={} resolved={} cuda_available={}".format(resolved_mode, device.type, torch.cuda.is_available()))
 LearnRate = 0.001
 # Epochs = 100
 Epochs = 2
 # TrainSize = 1600
-TrainSize = 2 # 训练数据集文件个数
+TrainSize = 2 # 训练数据文件个数
 BatchSize = 10
 
 external_model_src = r""
@@ -28,8 +27,8 @@ fcnNet = FCNVMB(n_classes=classes, in_channels=inchannels, is_deconv=True, is_ba
 if external_model_src != "":
     fcnNet = model_reader(net=fcnNet, device=device, save_src=external_model_src)
 
-if device.type == "cuda":
-    # Legacy behavior: fcnNet = torch.nn.DataParallel(fcnNet, device_ids=device_ids).cuda()
+if use_cuda:
+    # 旧版本写法：fcnNet = torch.nn.DataParallel(fcnNet, device_ids=device_ids).cuda()
     fcnNet = torch.nn.DataParallel(fcnNet, device_ids=device_ids).cuda()
 else:
     fcnNet = fcnNet.to(device)
@@ -71,7 +70,7 @@ for epoch in range(Epochs):
     for i, (images, labels) in enumerate(seis_and_vm_loader):
         iteration = epoch * step + i + 1
 
-        # Legacy behavior:
+        # 旧版本写法：
         # if torch.cuda.is_available():
         #     images = images.cuda(non_blocking=True)
         #     labels = labels.cuda(non_blocking=True)

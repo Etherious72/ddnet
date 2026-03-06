@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Build network
+网络结构定义
 
 Created on Feb 2023
 
@@ -17,7 +17,7 @@ import torch.nn.functional as F
 
 class SeismicRecordDownSampling(nn.Module):
     '''
-    Downsampling module for seismic records
+    地震记录下采样模块
     '''
     def __init__(self, shot_num):
         super().__init__()
@@ -47,20 +47,20 @@ class SeismicRecordDownSampling(nn.Module):
         return dimred6
 
 ###############################################
-#         Conventional Network Unit           #
-# (The red arrow shown in Fig 1 of the paper) #
+#             常规网络单元                 #
+#      （对应论文图1中的红色箭头）          #
 ###############################################
 
 class unetConv2(nn.Module):
     def __init__(self, in_size, out_size, is_batchnorm, activ_fuc = nn.ReLU(inplace=True)):
         '''
-        Conventional Network Unit
-        (The red arrow shown in Fig 1 of the paper)
+        常规网络单元
+        （对应论文图1中的红色箭头）
 
-        :param in_size:      Number of channels of input
-        :param out_size:     Number of channels of output
-        :param is_batchnorm: Whether to use BN
-        :param activ_fuc:    Activation function
+        :param in_size:      输入通道数
+        :param out_size:     输出通道数
+        :param is_batchnorm: 是否使用 BN
+        :param activ_fuc:    激活函数
         '''
         super(unetConv2, self).__init__()
         if is_batchnorm:
@@ -82,20 +82,20 @@ class unetConv2(nn.Module):
         return outputs
 
 ##################################################
-#             Downsampling Unit                  #
-# (The purple arrow shown in Fig 1 of the paper) #
+#               下采样单元                     #
+#      （对应论文图1中的紫色箭头）             #
 ##################################################
 
 class unetDown(nn.Module):
     def __init__(self, in_size, out_size, is_batchnorm, activ_fuc = nn.ReLU(inplace=True)):
         '''
-        Downsampling Unit
-        (The purple arrow shown in Fig 1 of the paper)
+        下采样单元
+        （对应论文图1中的紫色箭头）
 
-        :param in_size:      Number of channels of input
-        :param out_size:     Number of channels of output
-        :param is_batchnorm: Whether to use BN
-        :param activ_fuc:    Activation function
+        :param in_size:      输入通道数
+        :param out_size:     输出通道数
+        :param is_batchnorm: 是否使用 BN
+        :param activ_fuc:    激活函数
         '''
         super(unetDown, self).__init__()
         self.conv = unetConv2(in_size, out_size, is_batchnorm, activ_fuc)
@@ -109,13 +109,13 @@ class unetDown(nn.Module):
 class unetUp(nn.Module):
     def __init__(self, in_size, out_size, output_lim, is_deconv, activ_fuc=nn.ReLU(inplace=True)):
         '''
-        Upsampling Unit
-        (The yellow arrow shown in Fig 1 of the paper)
+        上采样单元
+        （对应论文图1中的黄色箭头）
 
-        :param in_size:      Number of channels of input
-        :param out_size:     Number of channels of output
-        :param is_deconv:    Whether to use deconvolution
-        :param activ_fuc:    Activation function
+        :param in_size:      输入通道数
+        :param out_size:     输出通道数
+        :param is_deconv:    是否使用反卷积
+        :param activ_fuc:    激活函数
         '''
         super(unetUp, self).__init__()
         self.output_lim = output_lim
@@ -133,13 +133,13 @@ class unetUp(nn.Module):
 class netUp(nn.Module):
     def __init__(self, in_size, out_size, output_lim, is_deconv):
         '''
-        Upsampling Unit
-        (The yellow arrow shown in Fig 1 of the paper)
+        上采样单元
+        （对应论文图1中的黄色箭头）
 
-        :param in_size:      Number of channels of input
-        :param out_size:     Number of channels of output
-        :param is_deconv:    Whether to use deconvolution
-        :param activ_fuc:    Activation function
+        :param in_size:      输入通道数
+        :param out_size:     输出通道数
+        :param is_deconv:    是否使用反卷积
+        :param activ_fuc:    激活函数
         '''
         super(netUp, self).__init__()
         self.output_lim = output_lim
@@ -154,22 +154,22 @@ class netUp(nn.Module):
         return output
 
 ###################################################
-# Non-square convolution with flexible definition #
-#            Similar to InversionNet              #
+#           可灵活定义的非方形卷积            #
+#              与 InversionNet 类似             #
 ###################################################
 
 class ConvBlock(nn.Module):
     def __init__(self, in_fea, out_fea, kernel_size=3, stride=1, padding=1, activ_fuc = nn.ReLU(inplace=True)):
         '''
-        Non-square convolution with flexible definition
-        (Similar to InversionNet)
+        可灵活定义的非方形卷积
+        （与 InversionNet 类似）
 
-        :param in_fea:       Number of channels for convolution layer input
-        :param out_fea:      Number of channels for convolution layer output
-        :param kernel_size:  Size of the convolution kernel
-        :param stride:       Convolution stride
-        :param padding:      Convolution padding
-        :param activ_fuc:    Activation function
+        :param in_fea:       卷积层输入通道数
+        :param out_fea:      卷积层输出通道数
+        :param kernel_size:  卷积核大小
+        :param stride:       卷积步长
+        :param padding:      卷积填充
+        :param activ_fuc:    激活函数
         '''
         super(ConvBlock,self).__init__()
         layers = [nn.Conv2d(in_channels=in_fea, out_channels=out_fea, kernel_size=kernel_size, stride=stride, padding=padding)]
@@ -181,21 +181,21 @@ class ConvBlock(nn.Module):
         return self.layers(x)
 
 ###################################################
-#    Convolution at the end for normalization     #
-#            Similar to InversionNet              #
+#            末端用于归一化的卷积             #
+#              与 InversionNet 类似             #
 ###################################################
 
 class ConvBlock_Tanh(nn.Module):
     def __init__(self, in_fea, out_fea, kernel_size=3, stride=1, padding=1):
         '''
-        Convolution at the end for normalization
-        (Similar to InversionNet)
+        末端用于归一化的卷积
+        （与 InversionNet 类似）
 
-        :param in_fea:       Number of channels for convolution layer input
-        :param out_fea:      Number of channels for convolution layer output
-        :param kernel_size:  Size of the convolution kernel
-        :param stride:       Convolution stride
-        :param padding:      Convolution padding
+        :param in_fea:       卷积层输入通道数
+        :param out_fea:      卷积层输出通道数
+        :param kernel_size:  卷积核大小
+        :param stride:       卷积步长
+        :param padding:      卷积填充
         '''
         super(ConvBlock_Tanh, self).__init__()
         layers = [nn.Conv2d(in_channels=in_fea, out_channels=out_fea, kernel_size=kernel_size, stride=stride, padding=padding)]
@@ -210,10 +210,10 @@ class ConvBlock_Tanh(nn.Module):
 class LossDDNet:
     def __init__(self, weights=[1, 1], entropy_weight=[1, 1]):
         '''
-        Define the loss function of DDNet
+        定义 DDNet 损失函数
 
-        :param weights:         The weights of the two decoders in the calculation of the loss value.
-        :param entropy_weight:  The weights of the two output channels in the second decoder.
+        :param weights:         损失计算中两个解码器的权重。
+        :param entropy_weight:  第二解码器两个输出通道的权重。
         '''
 
         self.criterion1 = nn.MSELoss()
@@ -223,10 +223,10 @@ class LossDDNet:
     def __call__(self, outputs1, outputs2, targets1, targets2):
         '''
 
-        :param outputs1: Output of the first decoder
-        :param outputs2: Velocity model
-        :param targets1: Output of the second decoder
-        :param targets2: Profile of the speed model
+        :param outputs1: 第一解码器输出
+        :param outputs2: 速度模型
+        :param targets1: 第二解码器输出
+        :param targets2: 速度模型轮廓
         :return:
         '''
         mse = self.criterion1(outputs1, targets1)
@@ -241,18 +241,18 @@ class LossDDNet:
         return criterion
 
 ############################################
-#          DD-Net70 Architecture           #
+#            DD-Net70 网络结构              #
 ############################################
 
 class DDNet70Model(nn.Module):
     def __init__(self, n_classes, in_channels, is_deconv, is_batchnorm):
         '''
-        DD-Net70 Architecture
+        DD-Net70 网络结构
 
-        :param n_classes:    Number of channels of output (any single decoder)
-        :param in_channels:  Number of channels of network input
-        :param is_deconv:    Whether to use deconvolution
-        :param is_batchnorm: Whether to use BN
+        :param n_classes:    输出通道数（单个解码器）
+        :param in_channels:  网络输入通道数
+        :param is_deconv:    是否使用反卷积
+        :param is_batchnorm: 是否使用 BN
         '''
         super(DDNet70Model, self).__init__()
         self.is_deconv = is_deconv
@@ -262,7 +262,7 @@ class DDNet70Model(nn.Module):
 
         self.pre_seis_conv = SeismicRecordDownSampling(self.in_channels)
 
-        # Intrinsic UNet section
+        # UNet 主干部分
         self.down3 = unetDown(32, 64, self.is_batchnorm)
         self.down4 = unetDown(64, 128, self.is_batchnorm)
         self.down5 = unetDown(128, 256, self.is_batchnorm)
@@ -285,8 +285,8 @@ class DDNet70Model(nn.Module):
     def forward(self, inputs, _=None):
         '''
 
-        :param inputs:      Input Image
-        :param _:           Variables for filling, for alignment with DD-Net
+        :param inputs:      输入图像
+        :param _:           占位参数，用于与 DD-Net 的接口对齐
         :return:
         '''
 
@@ -302,7 +302,7 @@ class DDNet70Model(nn.Module):
         decoder2_image = center
 
         #################
-        ###  Decoder1 ###
+        ###  解码器1 ###
         #################
         dc1_up5 = self.dc1_up5(down5, decoder1_image)
         dc1_up4 = self.dc1_up4(down4, dc1_up5)
@@ -310,7 +310,7 @@ class DDNet70Model(nn.Module):
         dc1_up2 = self.dc1_up2(dc1_up3)
 
         #################
-        ###  Decoder2 ###
+        ###  解码器2 ###
         #################
         dc2_up5 = self.dc2_up5(down5, decoder2_image)
         dc2_up4 = self.dc2_up4(down4, dc2_up5)
@@ -320,18 +320,18 @@ class DDNet70Model(nn.Module):
         return [self.dc1_final(dc1_up2), self.dc2_final(dc2_up2)]
 
 ############################################
-#          SD-Net70 Architecture           #
+#            SD-Net70 网络结构              #
 ############################################
 
 class SDNet70Model(nn.Module):
     def __init__(self, n_classes, in_channels, is_deconv, is_batchnorm):
         '''
-        DD-Net70 Architecture
+        SD-Net70 网络结构
 
-        :param n_classes:    Number of channels of output (any single decoder)
-        :param in_channels:  Number of channels of network input
-        :param is_deconv:    Whether to use deconvolution
-        :param is_batchnorm: Whether to use BN
+        :param n_classes:    输出通道数（单个解码器）
+        :param in_channels:  网络输入通道数
+        :param is_deconv:    是否使用反卷积
+        :param is_batchnorm: 是否使用 BN
         '''
         super(SDNet70Model, self).__init__()
         self.is_deconv = is_deconv
@@ -341,7 +341,7 @@ class SDNet70Model(nn.Module):
 
         self.pre_seis_conv = SeismicRecordDownSampling(self.in_channels)
 
-        # Intrinsic UNet section
+        # UNet 主干部分
         self.down3 = unetDown(32, 64, self.is_batchnorm)
         self.down4 = unetDown(64, 128, self.is_batchnorm)
         self.down5 = unetDown(128, 256, self.is_batchnorm)
@@ -359,8 +359,8 @@ class SDNet70Model(nn.Module):
     def forward(self, inputs, _=None):
         '''
 
-        :param inputs:      Input Image
-        :param _:           Variables for filling, for alignment with DD-Net
+        :param inputs:      输入图像
+        :param _:           占位参数，用于与 DD-Net 的接口对齐
         :return:
         '''
 
@@ -376,7 +376,7 @@ class SDNet70Model(nn.Module):
         decoder2_image = center
 
         #################
-        ###  Decoder1 ###
+        ###  解码器1 ###
         #################
         dc1_up5 = self.up5(down5, decoder1_image)
         dc1_up4 = self.up4(down4, dc1_up5)
@@ -387,7 +387,7 @@ class SDNet70Model(nn.Module):
 
 if __name__ == '__main__':
 
-    # # Model output size test (for DD-Net70)
+    # 模型输出尺寸测试（DD-Net70）
     #
     # x = torch.zeros((30, 5, 1000, 70))
     # model = DDNet70Model(n_classes = 1,

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Build helper method
+工具函数集合
 
 Created on Feb 2023
 
@@ -38,12 +38,12 @@ font21 = {
     'size': 21,
 }
 
-def pain_seg_seismic_data(para_seismic_data, is_colorbar = 1):
+def pain_seg_seismic_data(para_seismic_data, is_colorbar = 1, save_path = None, show = True):
     '''
-    Plotting seismic data images of SEG salt datasets
+    绘制 SEG 盐丘数据的地震图像
 
-    :param para_seismic_data:   Seismic data (400 x 301) (numpy)
-    :param is_colorbar:         Whether to add a color bar (1 means add, 0 is the default, means don't add)
+    :param para_seismic_data:   地震数据（400 x 301，numpy）
+    :param is_colorbar:         是否添加色条（1 添加，0 不添加）
     '''
 
     if is_colorbar == 0:
@@ -64,24 +64,28 @@ def pain_seg_seismic_data(para_seismic_data, is_colorbar = 1):
     if is_colorbar == 0:
         plt.subplots_adjust(bottom=0.11, top=0.95, left=0.11, right=0.99)
     else:
-        plt.rcParams['font.size'] = 14      # Set colorbar font size
+        plt.rcParams['font.size'] = 14      # 设置色条字体大小
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("top", size="3%", pad=0.32)
         plt.colorbar(im, ax=ax, cax=cax, orientation='horizontal')
 
         plt.subplots_adjust(bottom=0.08, top=0.98, left=0.11, right=0.99)
 
-    plt.show()
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    if show:
+        plt.show()
+    plt.close(fig)
 
-def pain_openfwi_seismic_data(para_seismic_data, is_colorbar = 1):
+def pain_openfwi_seismic_data(para_seismic_data, is_colorbar = 1, save_path = None, show = True):
     '''
-    Plotting seismic data images of openfwi dataset
+    绘制 OpenFWI 数据图像
 
-    :param para_seismic_data:   Seismic data (1000 x 70) (numpy)
-    :param is_colorbar:         Whether to add a color bar (1 means add, 0 is the default, means don't add)
+    :param para_seismic_data:   地震数据（1000 x 70，numpy）
+    :param is_colorbar:         是否添加色条（1 添加，0 不添加）
     '''
 
-    # The size of 1000 x 70 is not easy to display, we compressed it to a similar size of 400 x 301 as the SEG dataset.
+    # 1000x70 不易展示，这里缩放到接近 SEG 的 400x301 尺寸。
     data = cv2.resize(para_seismic_data, dsize=(400, 301), interpolation=cv2.INTER_CUBIC)   #
 
     if is_colorbar == 0:
@@ -100,23 +104,27 @@ def pain_openfwi_seismic_data(para_seismic_data, is_colorbar = 1):
     if is_colorbar == 0:
         plt.subplots_adjust(bottom=0.11, top=0.95, left=0.11, right=0.99)
     else:
-        plt.rcParams['font.size'] = 14      # Set colorbar font size
+        plt.rcParams['font.size'] = 14      # 设置色条字体大小
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("top", size="3%", pad=0.3)
         plt.colorbar(im, ax=ax, cax=cax, orientation='horizontal')
 
         plt.subplots_adjust(bottom=0.08, top=0.98, left=0.11, right=0.99)
 
-    plt.show()
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    if show:
+        plt.show()
+    plt.close(fig)
 
-def pain_openfwi_velocity_model(para_velocity_model, min_velocity, max_velocity, is_colorbar = 1):
+def pain_openfwi_velocity_model(para_velocity_model, min_velocity, max_velocity, is_colorbar = 1, save_path = None, show = True):
     '''
-    Plotting seismic data images of openfwi dataset
+    绘制 OpenFWI 速度模型图像
 
-    :param para_velocity_model: Velocity model (70 x 70) (numpy)
-    :param min_velocity:        Upper limit of velocity in the velocity model
-    :param max_velocity:        Lower limit of velocity in the velocity model
-    :param is_colorbar:         Whether to add a color bar (1 means add, 0 is the default, means don't add)
+    :param para_velocity_model: 速度模型（70 x 70，numpy）
+    :param min_velocity:        速度模型下限值
+    :param max_velocity:        速度模型上限值
+    :param is_colorbar:         是否添加色条（1 添加，0 不添加）
     :return:
     '''
 
@@ -137,22 +145,26 @@ def pain_openfwi_velocity_model(para_velocity_model, min_velocity, max_velocity,
     if is_colorbar == 0:
         plt.subplots_adjust(bottom=0.11, top=0.95, left=0.11, right=0.95)
     else:
-        plt.rcParams['font.size'] = 14      # Set colorbar font size
+        plt.rcParams['font.size'] = 14      # 设置色条字体大小
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("top", size="3%", pad=0.35)
         plt.colorbar(im, ax=ax, cax=cax, orientation='horizontal',
                      ticks=np.linspace(min_velocity, max_velocity, 7), format = mpl.ticker.StrMethodFormatter('{x:.0f}'))
         plt.subplots_adjust(bottom=0.10, top=0.95, left=0.13, right=0.95)
 
-    plt.show()
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    if show:
+        plt.show()
+    plt.close(fig)
 
-def pain_seg_velocity_model(para_velocity_model, min_velocity, max_velocity, is_colorbar = 1):
+def pain_seg_velocity_model(para_velocity_model, min_velocity, max_velocity, is_colorbar = 1, save_path = None, show = True):
     '''
 
-    :param para_velocity_model: Velocity model (200 x 301) (numpy)
-    :param min_velocity:        Upper limit of velocity in the velocity model
-    :param max_velocity:        Lower limit of velocity in the velocity model
-    :param is_colorbar:         Whether to add a color bar (1 means add, 0 is the default, means don't add)
+    :param para_velocity_model: 速度模型（200 x 301，numpy）
+    :param min_velocity:        速度模型下限值
+    :param max_velocity:        速度模型上限值
+    :param is_colorbar:         是否添加色条（1 添加，0 不添加）
     :return:
     '''
     if is_colorbar == 0:
@@ -169,22 +181,26 @@ def pain_seg_velocity_model(para_velocity_model, min_velocity, max_velocity, is_
     if is_colorbar == 0:
         plt.subplots_adjust(bottom=0.15, top=0.95, left=0.11, right=0.99)
     else:
-        plt.rcParams['font.size'] = 14  # Set colorbar font size
+        plt.rcParams['font.size'] = 14  # 设置色条字体大小
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("top", size="3%", pad=0.32)
         plt.colorbar(im, ax=ax, cax=cax, orientation='horizontal',
                      ticks=np.linspace(min_velocity, max_velocity, 7))
         plt.subplots_adjust(bottom=0.12, top=0.95, left=0.11, right=0.99)
 
-    plt.show()
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    if show:
+        plt.show()
+    plt.close(fig)
 
 def add_gasuss_noise(image, mu = 0, sigma = 0.01):
     '''
-    Add Gaussian noise
+    添加高斯噪声
 
-    :param image:       Input image
-    :param mu:          Noise mean value
-    :param sigma:       Noise variance
+    :param image:       输入图像
+    :param mu:          噪声均值
+    :param sigma:       噪声方差
     :return:
     '''
 
@@ -195,12 +211,12 @@ def add_gasuss_noise(image, mu = 0, sigma = 0.01):
 
 def agc_on_one_trace(data, window, length, min):
     '''
-    Amplify the amplitude of a trace by automatic gain control
+    通过自动增益控制增强单道振幅
 
-    :param data:    A trace of wave information
-    :param window:  Window information
-    :param length:  The width of the waveform, i.e. the length of a trace
-    :param min:     Minimum value
+    :param data:    单道波形数据
+    :param window:  窗口参数
+    :param length:  波形长度（单道长度）
+    :param min:     最小值
     :return:
     '''
 
@@ -462,8 +478,8 @@ def run_uqi(GT,P,ws=8):
         GT = GT[:, :, np.newaxis]
         P = P[:, :, np.newaxis]
 
-    GT = GT.astype(np.float64)
-    P = P.astype(np.float64)
+    GT = GT.astype(np.float32)
+    P = P.astype(np.float32)
     return np.mean([_uqi_single(GT[:,:,i],P[:,:,i],ws) for i in range(GT.shape[2])])
 
 

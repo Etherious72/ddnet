@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Direct method for reading datasets
+数据集读取方法
 
 Created on Sep 2023
 
@@ -20,13 +20,13 @@ def batch_read_matfile(dataset_dir,
                        train_or_test="train",
                        data_channels=29):
     '''
-    Batch read seismic gathers and velocity models for .mat file
+    批量读取 .mat 的地震数据与速度模型
 
-    :param dataset_dir:             Path to the dataset
-    :param start:                   Start reading from the number of data
-    :param batch_length:            Starting from the defined first number of data, how long to read
-    :param train_or_test:           Whether the read data is used for training or testing ("train" or "test")
-    :param data_channels:           The total number of channels read into the data itself
+    :param dataset_dir:             数据集路径
+    :param start:                   起始读取编号
+    :param batch_length:            从起始编号开始读取的长度
+    :param train_or_test:           读取数据用于训练或测试（"train" 或 "test"）
+    :param data_channels:           数据读取时使用的总通道数
     :return:                        a quadruple: (seismic data, [velocity model, contour of velocity model])
                                     Among them, the dimensions of seismic data, velocity model and contour of velocity model are all (number of read data, channel, width x height)
     '''
@@ -37,7 +37,7 @@ def batch_read_matfile(dataset_dir,
 
     for indx, i in enumerate(range(start, start + batch_length)):
 
-        # Load Seismic Data
+        # 加载地震数据
         filename_seis = dataset_dir + '{}_data/seismic/seismic{}.mat'.format(train_or_test, i)
         print("Reading: {}".format(filename_seis))
         sei_data = scipy.io.loadmat(filename_seis)["data"]
@@ -47,7 +47,7 @@ def batch_read_matfile(dataset_dir,
         for ch in range(inchannels):
             data_set[indx, ch, ...] = sei_data[ch, ...]
 
-        # Load Velocity Model
+        # 加载速度模型
         filename_label = dataset_dir + '{}_data/vmodel/vmodel{}.mat'.format(train_or_test, i)
         print("Reading: {}".format(filename_label))
         vm_data = scipy.io.loadmat(filename_label)["data"]
@@ -61,12 +61,12 @@ def batch_read_npyfile(dataset_dir,
                        batch_length,
                        train_or_test="train"):
     '''
-    Batch read seismic gathers and velocity models for .npy file
+    批量读取 .npy 的地震数据与速度模型
 
-    :param dataset_dir:             Path to the dataset
-    :param start:                   Start reading from the number of data
-    :param batch_length:            Starting from the defined first number of data, how long to read
-    :param train_or_test:           Whether the read data is used for training or testing ("train" or "test")
+    :param dataset_dir:             数据集路径
+    :param start:                   起始读取编号
+    :param batch_length:            从起始编号开始读取的长度
+    :param train_or_test:           读取数据用于训练或测试（"train" 或 "test"）
     :return:                        a pair: (seismic data, [velocity model, contour of velocity model])
                                     Among them, the dimensions of seismic data, velocity model and contour of velocity
                                     model are all (number of read data * 500, channel, height, width)
@@ -78,10 +78,10 @@ def batch_read_npyfile(dataset_dir,
     for i in range(start, start + batch_length):
 
         ##############################
-        ##    Load Seismic Data     ##
+        ##       加载地震数据       ##
         ##############################
 
-        # Determine the seismic data path in the dataset
+        # 确定地震数据文件路径
         filename_seis = dataset_dir + '{}_data/seismic/seismic{}.npy'.format(train_or_test, i)
         print("Reading: {}".format(filename_seis))
         temp_data = np.load(filename_seis)
@@ -89,10 +89,10 @@ def batch_read_npyfile(dataset_dir,
         dataset.append(temp_data)
 
         ##############################
-        ##    Load Velocity Model   ##
+        ##       加载速度模型       ##
         ##############################
 
-        # Determine the velocity model path in the dataset
+        # 确定速度模型文件路径
         filename_label = dataset_dir + '{}_data/vmodel/vmodel{}.npy'.format(train_or_test, i)
         print("Reading: {}".format(filename_label))
         temp_data = np.load(filename_label)
@@ -102,7 +102,7 @@ def batch_read_npyfile(dataset_dir,
     dataset = np.vstack(dataset)
     labelset = np.vstack(labelset)
 
-    print("Generating velocity model profile......")
+    print("正在生成速度模型轮廓......")
     conlabels = np.zeros([batch_length * 500, classes, model_dim[0], model_dim[1]])
     for i in range(labelset.shape[0]):
         for j in range(labelset.shape[1]):
@@ -118,14 +118,14 @@ def single_read_matfile(dataset_dir,
                         train_or_test = "train",
                         data_channels = 29):
     '''
-    Single read seismic gathers and velocity models for .mat file
+    单样本读取 .mat 的地震数据与速度模型
 
-    :param dataset_dir:             Path to the dataset
-    :param seismic_data_size:       Size of the seimic data
-    :param velocity_model_size:     Size of the velocity model
-    :param readID:                  The ID number of the selected data
-    :param train_or_test:           Whether the read data is used for training or testing ("train" or "test")
-    :param data_channels:           The total number of channels read into the data itself
+    :param dataset_dir:             数据集路径
+    :param seismic_data_size:       地震数据尺寸
+    :param velocity_model_size:     速度模型尺寸
+    :param readID:                  所选样本 ID
+    :param train_or_test:           读取数据用于训练或测试（"train" 或 "test"）
+    :param data_channels:           数据读取时使用的总通道数
     :return:                        a triplet: (seismic data, velocity model, contour of velocity model)
                                     Among them, the dimensions of seismic data, velocity model and contour of velocity model are
                                     (channel, width, height), (width, height) and (width, height) respectively
@@ -144,7 +144,7 @@ def single_read_matfile(dataset_dir,
     se_data = se_data.swapaxes(0, 2)
     se_data = se_data.swapaxes(1, 2)
 
-    contours_vm_data = extract_contours(vm_data)  # Use Canny to extract contour features
+    contours_vm_data = extract_contours(vm_data)  # 使用 Canny 提取轮廓特征
 
     return se_data, vm_data, contours_vm_data
 
@@ -152,25 +152,25 @@ def single_read_npyfile(dataset_dir,
                         readIDs,
                         train_or_test = "train"):
     '''
-    Single read seismic gathers and velocity models for .npy file
+    单样本读取 .npy 的地震数据与速度模型
 
-    :param dataset_dir:             Path to the dataset
-    :param readID:                  The IDs number of the selected data
-    :param train_or_test:           Whether the read data is used for training or testing ("train" or "test")
+    :param dataset_dir:             数据集路径
+    :param readID:                  所选样本 ID 组合
+    :param train_or_test:           读取数据用于训练或测试（"train" 或 "test"）
     :return:                        seismic data, velocity model, contour of velocity model
     '''
 
-    # Determine the seismic data path in the dataset
+    # 确定地震数据文件路径
     filename_seis = dataset_dir + '{}_data/seismic/seismic{}.npy'.format(train_or_test, readIDs[0])
     print("Reading: {}".format(filename_seis))
-    # Determine the velocity model path in the dataset
+    # 确定速度模型文件路径
     filename_label = dataset_dir + '{}_data/vmodel/vmodel{}.npy'.format(train_or_test, readIDs[0])
     print("Reading: {}".format(filename_label))
 
     se_data = np.load(filename_seis)[readIDs[1]]
     vm_data = np.load(filename_label)[readIDs[1]][0]
 
-    print("Generating velocity model profile......")
+    print("正在生成速度模型轮廓......")
     conlabel = extract_contours(vm_data)
 
     return se_data, vm_data, conlabel

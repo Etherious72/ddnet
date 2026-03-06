@@ -8,13 +8,16 @@ Deep learning full waveform inversion (DL-FWI) is gaining much research interest
 ## >> Folder: (root directory)
 
 ### param_config.py
+全局实验开关，决定数据集、输入输出尺寸、训练轮次、batch size、loss 权重等。
 The global important variables of program operation are recorded, including some unique variables to each dataset.
 
 ### path_config
+路径拼接中心；基于 dataset_name 动态映射到 data/*、models/*、results/*
 The path where the program runs.
 Among them, please modify the variable "main_dir" to your storage location.
 
 ### model_train.py (main running program)
+主训练入口
 The main program for training the our approaches.
 The models generated during the training process will be stored in the models folder.
 And the loss information generated in this process will be stored in results folder.
@@ -30,6 +33,7 @@ The models generated during the training process will be stored in the models fo
 And the loss information generated in this process will be stored in results folder.
 
 ### model_test.py (main running program)
+批量与单样本测试
 The main program for testing the model.
 The evaluation metric results generated during the test will be stored in the results folder.
 
@@ -37,12 +41,15 @@ The evaluation metric results generated during the test will be stored in the re
 Store some commonly used function methods.
 
 ### datasets_reader.py
+数据读取核心，支持 .mat（SEG）和 .npy（OpenFWI）
 Several methods for reading seismic data and velocity models in batches and individually are documented.
 
 ### utils.py
+轮廓提取（Canny）、可视化、指标、模型加载等工具。
 Evaluation metrics and some common operations are documented.
 
 ## >> Folder: net
+网络结构定义（DDNet、DDNet70、InversionNet、FCNVMB）
 Some convolution operations and network architecture are documented.
 
 ### DDNet.py

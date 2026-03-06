@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Comparison of the network
+对比模型网络结构
 
 Created on 2023
 
@@ -16,11 +16,11 @@ import torch.nn.functional as F
 class unetConv2(nn.Module):
     def __init__(self, in_size, out_size, is_batchnorm):
         '''
-        Convolution with two basic operations
+        包含两次基础卷积操作
 
-        :param in_size:         Number of channels of input
-        :param out_size:        Number of channels of output
-        :param is_batchnorm:    Whether to use BN
+        :param in_size:         输入通道数
+        :param out_size:        输出通道数
+        :param is_batchnorm:    是否使用 BN
         '''
         super(unetConv2, self).__init__()
         if is_batchnorm:
@@ -39,7 +39,7 @@ class unetConv2(nn.Module):
     def forward(self, inputs):
         '''
 
-        :param inputs:          Input Image
+        :param inputs:          输入图像
         :return:
         '''
         outputs = self.conv1(inputs)
@@ -50,12 +50,12 @@ class unetConv2(nn.Module):
 class unetDown(nn.Module):
     def __init__(self, in_size, out_size, is_batchnorm):
         '''
-        Downsampling Unit
-        [Affiliated with FCNVMB]
+        下采样单元
+        [FCNVMB 组件]
 
-        :param in_size:         Number of channels of input
-        :param out_size:        Number of channels of output
-        :param is_batchnorm:    Whether to use BN
+        :param in_size:         输入通道数
+        :param out_size:        输出通道数
+        :param is_batchnorm:    是否使用 BN
         '''
         super(unetDown, self).__init__()
         self.conv = unetConv2(in_size, out_size, is_batchnorm)
@@ -64,7 +64,7 @@ class unetDown(nn.Module):
     def forward(self, inputs):
         '''
 
-        :param inputs:          Input Image
+        :param inputs:          输入图像
         :return:
         '''
         outputs = self.conv(inputs)
@@ -75,16 +75,16 @@ class unetDown(nn.Module):
 class unetUp(nn.Module):
     def __init__(self, in_size, out_size, is_deconv):
         '''
-        Upsampling Unit
-        [Affiliated with FCNVMB]
+        上采样单元
+        [FCNVMB 组件]
 
-        :param in_size:      Number of channels of input
-        :param out_size:     Number of channels of output
-        :param is_deconv:    Whether to use deconvolution
+        :param in_size:      输入通道数
+        :param out_size:     输出通道数
+        :param is_deconv:    是否使用反卷积
         '''
         super(unetUp, self).__init__()
         self.conv = unetConv2(in_size, out_size, True)
-        # Transposed convolution
+        # 转置卷积
         if is_deconv:
             self.up = nn.ConvTranspose2d(in_size, out_size, kernel_size=2, stride=2)
         else:
@@ -93,8 +93,8 @@ class unetUp(nn.Module):
     def forward(self, inputs1, inputs2):
         '''
 
-        :param inputs1:      Layer of the selected coding area via skip connection
-        :param inputs2:      Current network layer based on network flows
+        :param inputs1:      通过跳跃连接选取的编码层特征
+        :param inputs2:      当前主干网络层特征
         :return:
         '''
         outputs2 = self.up(inputs2)
@@ -102,7 +102,7 @@ class unetUp(nn.Module):
         offset2 = (outputs2.size()[3] - inputs1.size()[3])
         padding = [offset2 // 2, (offset2 + 1) // 2, offset1 // 2, (offset1 + 1) // 2]
 
-        # Skip and concatenate
+        # 跳跃连接并拼接
         outputs1 = F.pad(inputs1, padding)
         return self.conv(torch.cat([outputs1, outputs2], 1))
 
@@ -110,12 +110,12 @@ class unetUp(nn.Module):
 class FCNVMB(nn.Module):
     def __init__(self, n_classes, in_channels, is_deconv, is_batchnorm):
         '''
-        Network architecture of FCNVMB
+        FCNVMB 网络结构
 
-        :param n_classes:       Number of channels of output (any single decoder)
-        :param in_channels:     Number of channels of network input
-        :param is_deconv:       Whether to use deconvolution
-        :param is_batchnorm:    Whether to use BN
+        :param n_classes:       输出通道数（单个解码器）
+        :param in_channels:     网络输入通道数
+        :param is_deconv:       是否使用反卷积
+        :param is_batchnorm:    是否使用 BN
         '''
         super(FCNVMB, self).__init__()
         self.is_deconv = is_deconv
@@ -140,8 +140,8 @@ class FCNVMB(nn.Module):
     def forward(self, inputs, label_dsp_dim):
         '''
 
-        :param inputs:          Input Image
-        :param label_dsp_dim:   Size of the network output image (velocity model size)
+        :param inputs:          输入图像
+        :param label_dsp_dim:   网络输出图像尺寸（速度模型大小）
         :return:
         '''
         down1 = self.down1(inputs)
@@ -159,7 +159,7 @@ class FCNVMB(nn.Module):
 
 if __name__ == '__main__':
 
-    # FCNVMB
+    # FCNVMB 模型
     x = torch.zeros((5, 29, 400, 301))
     model = FCNVMB(n_classes=1, in_channels=29, is_deconv=True, is_batchnorm=True)
     out = model(x, [201, 301])

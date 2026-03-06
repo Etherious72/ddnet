@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Comparison of the network
+对比模型网络结构
 
 Created on 2023
 
@@ -85,7 +85,7 @@ class InversionNet(nn.Module):
         self.deconv6 = ConvBlock_Tanh(dim1, 1)
 
     def forward(self, x):
-        # Encoder Part
+        # 编码器部分
         x = self.convblock1(x)  # (None, 32, 500, 70)
         x = self.convblock2_1(x)  # (None, 64, 250, 70)
         x = self.convblock2_2(x)  # (None, 64, 250, 70)
@@ -101,7 +101,7 @@ class InversionNet(nn.Module):
         x = self.convblock7_2(x)  # (None, 256, 8, 9)
         x = self.convblock8(x)  # (None, 512, 1, 1)
 
-        # Decoder Part
+        # 解码器部分
         x = self.deconv1_1(x)  # (None, 512, 5, 5)
         x = self.deconv1_2(x)  # (None, 512, 5, 5)
         x = self.deconv2_1(x)  # (None, 256, 10, 10)
@@ -118,7 +118,7 @@ class InversionNet(nn.Module):
 
 if __name__ == '__main__':
 
-    # InversionNet
+    # InversionNet 模型
     x = torch.zeros((10, 5, 1000, 70))
     model = InversionNet()
     out = model(x)

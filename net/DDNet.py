@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Build network
+网络结构定义
 
 Created on Feb 2023
 
@@ -14,20 +14,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 ###############################################
-#         Conventional Network Unit           #
-# (The red arrow shown in Fig 1 of the paper) #
+#             常规网络单元                 #
+#      （对应论文图1中的红色箭头）            #
 ###############################################
 
 class unetConv2(nn.Module):
     def __init__(self, in_size, out_size, is_batchnorm, activ_fuc = nn.ReLU(inplace=True)):
         '''
-        Conventional Network Unit
-        (The red arrow shown in Fig 1 of the paper)
+        常规网络单元
+        （对应论文图1中的红色箭头）
 
-        :param in_size:      Number of channels of input
-        :param out_size:     Number of channels of output
-        :param is_batchnorm: Whether to use BN
-        :param activ_fuc:    Activation function
+        :param in_size:      输入通道数
+        :param out_size:     输出通道数
+        :param is_batchnorm: 是否使用 BN
+        :param activ_fuc:    激活函数
         '''
         super(unetConv2, self).__init__()
         if is_batchnorm:
@@ -49,20 +49,20 @@ class unetConv2(nn.Module):
         return outputs
 
 ##################################################
-#             Downsampling Unit                  #
-# (The purple arrow shown in Fig 1 of the paper) #
+#               下采样单元                     #
+#      （对应论文图1中的紫色箭头）                #
 ##################################################
 
 class unetDown(nn.Module):
     def __init__(self, in_size, out_size, is_batchnorm, activ_fuc = nn.ReLU(inplace=True)):
         '''
-        Downsampling Unit
-        (The purple arrow shown in Fig 1 of the paper)
+        下采样单元
+        （对应论文图1中的紫色箭头）
 
-        :param in_size:      Number of channels of input
-        :param out_size:     Number of channels of output
-        :param is_batchnorm: Whether to use BN
-        :param activ_fuc:    Activation function
+        :param in_size:      输入通道数
+        :param out_size:     输出通道数
+        :param is_batchnorm: 是否使用 BN
+        :param activ_fuc:    激活函数
         '''
         super(unetDown, self).__init__()
         self.conv = unetConv2(in_size, out_size, is_batchnorm, activ_fuc)
@@ -74,20 +74,20 @@ class unetDown(nn.Module):
         return outputs
 
 ##################################################
-#               Upsampling Unit                  #
-# (The yellow arrow shown in Fig 1 of the paper) #
+#               上采样单元                     #
+#      （对应论文图1中的黄色箭头）                #
 ##################################################
 
 class unetUp(nn.Module):
     def __init__(self, in_size, out_size, is_deconv, activ_fuc = nn.ReLU(inplace=True)):
         '''
-        Upsampling Unit
-        (The yellow arrow shown in Fig 1 of the paper)
+        上采样单元
+        （对应论文图1中的黄色箭头）
 
-        :param in_size:      Number of channels of input
-        :param out_size:     Number of channels of output
-        :param is_deconv:    Whether to use deconvolution
-        :param activ_fuc:    Activation function
+        :param in_size:      输入通道数
+        :param out_size:     输出通道数
+        :param is_deconv:    是否使用反卷积
+        :param activ_fuc:    激活函数
         '''
         super(unetUp, self).__init__()
         self.conv = unetConv2(in_size, out_size, True, activ_fuc)
@@ -102,24 +102,24 @@ class unetUp(nn.Module):
         offset2 = (outputs2.size()[3] - inputs1.size()[3])
         padding = [offset2 // 2, (offset2 + 1) // 2, offset1 // 2, (offset1 + 1) // 2]
 
-        # Skip and concatenate
+        # 跳跃连接并拼接
         outputs1 = F.pad(inputs1, padding)
 
         return self.conv(torch.cat([outputs1, outputs2], 1))
 
 ############################################
-#            DD-Net Architecture           #
+#              DD-Net 网络结构              #
 ############################################
 
 class DDNetModel(nn.Module):
     def __init__(self, n_classes, in_channels, is_deconv, is_batchnorm):
         '''
-        DD-Net Architecture
+        DD-Net 网络结构
 
-        :param n_classes:    Number of channels of output (any single decoder)
-        :param in_channels:  Number of channels of network input
-        :param is_deconv:    Whether to use deconvolution
-        :param is_batchnorm: Whether to use BN
+        :param n_classes:    输出通道数（单个解码器）
+        :param in_channels:  网络输入通道数
+        :param is_deconv:    是否使用反卷积
+        :param is_batchnorm: 是否使用 BN
         '''
         super(DDNetModel, self).__init__()
         self.is_deconv = is_deconv
@@ -152,8 +152,8 @@ class DDNetModel(nn.Module):
     def forward(self, inputs, label_dsp_dim):
         '''
 
-        :param inputs:          Input Image
-        :param label_dsp_dim:   Size of the network output image (velocity model size)
+        :param inputs:          输入图像
+        :param label_dsp_dim:   网络输出图像尺寸（速度模型大小）
         :return:
         '''
         down1 = self.down1(inputs)
@@ -167,7 +167,7 @@ class DDNetModel(nn.Module):
         decoder2_image = center
 
         #################
-        ###  Decoder1 ###
+        ###  解码器1 ###
         #################
         dc1_up4 = self.dc1_up4(down4, decoder1_image)
         dc1_up3 = self.dc1_up3(down3, dc1_up4)
@@ -177,7 +177,7 @@ class DDNetModel(nn.Module):
         dc1_capture = dc1_up1[:, :, 1:1 + label_dsp_dim[0], 1:1 + label_dsp_dim[1]].contiguous()
 
         #################
-        ###  Decoder2 ###
+        ###  解码器2 ###
         #################
         dc2_up4 = self.dc2_up4(down4, decoder2_image)
         dc2_up3 = self.dc2_up3(down3, dc2_up4)
@@ -191,10 +191,10 @@ class DDNetModel(nn.Module):
 class LossDDNet:
     def __init__(self, weights=[1, 1], entropy_weight=[1, 1]):
         '''
-        Define the loss function of DDNet
+        定义 DDNet 损失函数
 
-        :param weights:         The weights of the two decoders in the calculation of the loss value.
-        :param entropy_weight:  The weights of the two output channels in the second decoder.
+        :param weights:         损失计算中两个解码器的权重。
+        :param entropy_weight:  第二解码器两个输出通道的权重。
         '''
 
         self.criterion1 = nn.MSELoss()
@@ -204,10 +204,10 @@ class LossDDNet:
     def __call__(self, outputs1, outputs2, targets1, targets2):
         '''
 
-        :param outputs1: Output of the first decoder
-        :param outputs2: Velocity model
-        :param targets1: Output of the second decoder
-        :param targets2: Profile of the speed model
+        :param outputs1: 第一解码器输出
+        :param outputs2: 速度模型
+        :param targets1: 第二解码器输出
+        :param targets2: 速度模型轮廓
         :return:
         '''
         mse = self.criterion1(outputs1, targets1)
@@ -222,17 +222,17 @@ class LossDDNet:
         return criterion
 
 ############################################
-#          SD-Net Architecture             #
+#             SD-Net 网络结构               #
 ############################################
 
 class SDNetModel(nn.Module):
     def __init__(self, n_classes, in_channels, is_deconv, is_batchnorm):
         '''
 
-        :param n_classes: Number of channels of output (any single decoder)
-        :param in_channels: Number of channels of network input
-        :param is_deconv: Whether to use deconvolution
-        :param is_batchnorm: Whether to use BN
+        :param n_classes: 输出通道数（单个解码器）
+        :param in_channels: 网络输入通道数
+        :param is_deconv: 是否使用反卷积
+        :param is_batchnorm: 是否使用 BN
         '''
 
         super(SDNetModel, self).__init__()
@@ -275,7 +275,7 @@ class SDNetModel(nn.Module):
 
 if __name__ == '__main__':
 
-    # # Model output size test (for DD-Net)
+    # 模型输出尺寸测试（DD-Net）
 
     x = torch.zeros((2, 29, 400, 301))
     model = DDNetModel(n_classes = 1,

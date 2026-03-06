@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Curriculum Learning
+课程学习训练脚本
 
 Created on Feb 2023
 
@@ -14,6 +14,7 @@ from net.InversionNet import InversionNet
 from net.FCNVMB import FCNVMB
 from net.DDNet70 import DDNet70Model, SDNet70Model, LossDDNet
 from net.DDNet import DDNetModel, SDNetModel
+from func.device_selector import get_runtime_device
 from math import ceil
 
 import time
@@ -22,26 +23,23 @@ import torch
 import torch.utils.data as data_utils
 import gc
 import torch.nn.functional as F
-import os
 
 def determine_network(external_model_src="", model_type="DDNet"):
     '''
-    Request a network object and import an external network, or create an initialized network
+    获取网络对象并导入外部模型，或创建初始化模型
 
-    :param external_model_src:  External pkl file path
-    :param model_type:          The main model used, this model is differentiated based on different papers.
-                                The available key model keywords are
+    :param external_model_src:  外部 pkl 文件路径
+    :param model_type:          主模型类型，根据不同论文实现进行区分。
+                                可用模型关键字为
                                 [DDNet | DDNet70 | InversionNet | FCNVMB | SDNet | SDNet70]
-    :return:                    A triplet: model object, GPU environment object and optimizer
+    :return:                    三元组：模型对象、设备对象与优化器
     '''
 
-    force_cpu = os.environ.get("DDNET_FORCE_CPU", "0") == "1"
-    # Legacy behavior: cuda_available = torch.cuda.is_available()
-    cuda_available = torch.cuda.is_available() and not force_cpu
-    device = torch.device("cuda" if cuda_available else "cpu")
+    device, cuda_available, resolved_mode = get_runtime_device(device_mode)
+    print("[Device] mode={} resolved={} cuda_available={}".format(resolved_mode, device.type, torch.cuda.is_available()))
     gpus = [0]
 
-    # Network initialization
+    # 网络初始化
     if model_type == "DDNet":
         net_model = DDNetModel(n_classes=classes,
                                in_channels=inchannels,
@@ -76,13 +74,13 @@ def determine_network(external_model_src="", model_type="DDNet"):
             ' is the undefined network model keyword! Please check!')
         exit(0)
 
-    # Inherit the previous network structure
+    # 继承已有网络参数
     if external_model_src != "":
         net_model = model_reader(net=net_model, device=device, save_src=external_model_src)
 
-    # Allocate GPUs and set optimizers
+    # 分配设备并设置优化器
     if cuda_available:
-        # Legacy behavior: net_model = torch.nn.DataParallel(net_model.cuda(), device_ids=gpus)
+        # 旧版本写法：net_model = torch.nn.DataParallel(net_model.cuda(), device_ids=gpus)
         net_model = torch.nn.DataParallel(net_model.cuda(), device_ids=gpus)
     else:
         net_model = net_model.to(device)
@@ -93,7 +91,7 @@ def determine_network(external_model_src="", model_type="DDNet"):
 
 def load_dataset(stage = 3):
     '''
-    Load the training data according to the parameters in "param_config"
+    根据 "param_config" 中参数加载训练数据
 
     :return:
     '''
@@ -138,7 +136,7 @@ def load_dataset(stage = 3):
     else:
         pass
 
-    # Training set
+    # 训练集
     seis_and_vm = data_utils.TensorDataset(
         torch.from_numpy(data_set).float(),
         torch.from_numpy(label_sets[0]).float(),
@@ -158,22 +156,22 @@ def load_dataset(stage = 3):
 
 def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_times = 1, key_word = "CLstage1", model_type = "DDNet"):
     '''
-    Training for designated epochs
+    按指定轮次进行训练
 
-    :param cur_epochs:      Designated epochs
-    :param model:           Network model objects to be used for training
-    :param training_loader: Trainin dataset loader to be fed into the network
-    :param optimizer:       Optimizer
-    :param key_word:        After the training, the keywords will be saved to the model
-    :param stage_keyword:   The selected difficulty keyword (set "no settings" to ignore CL)
-    :param model_type:      The main model used, this model is differentiated based on different papers.
-                            The available key model keywords are [DDNet | DDNet70 | InversionNet | FCNVMB]
-    :return:                Model save path
+    :param cur_epochs:      指定训练轮数
+    :param model:           用于训练的网络模型对象
+    :param training_loader: 送入网络的训练集 DataLoader
+    :param optimizer:       优化器
+    :param key_word:        训练后用于模型命名的关键字
+    :param stage_keyword:   所选难度阶段关键字（设为 no settings 可忽略 CL）
+    :param model_type:      主模型类型，根据不同论文实现进行区分。
+                            可用模型关键字为 [DDNet | DDNet70 | InversionNet | FCNVMB]
+    :return:                模型保存路径
     '''
 
     loss_of_stage = []
     last_model_save_path = ""
-    step = int(train_size / train_batch_size)       # Total number of batches to train
+    step = int(train_size / train_batch_size)       # 训练总 batch 数
     save_epoch = cur_epochs // save_times
     training_time = 0
 
@@ -182,19 +180,19 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
     model_device = next(model.parameters()).device
 
     for epoch in range(cur_epochs):
-        # Training for the current epoch
+        # 当前 epoch 的训练
         loss_of_epoch = 0.0
         cur_node_time = time.time()
         ############
-        # training #
+        # 训练
         ############
         for i, (images, labels, contours_labels) in enumerate(training_loader):
 
             iteration = epoch * step + i + 1
             model.train()
 
-            # Load to GPU
-            # Legacy behavior:
+            # 加载到设备
+            # 旧版本写法：
             # if torch.cuda.is_available():
             #     images = images.cuda(non_blocking=True)
             #     labels = labels.cuda(non_blocking=True)
@@ -203,7 +201,7 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
             labels = labels.to(model_device, non_blocking=model_device.type == "cuda")
             contours_labels = contours_labels.to(model_device, non_blocking=model_device.type == "cuda")
 
-            # Gradient cache clearing
+            # 清空梯度缓存
             optimizer.zero_grad()
             criterion = LossDDNet(weights=loss_weight)
 
@@ -222,10 +220,10 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
             if np.isnan(float(loss.item())):
                 raise ValueError('loss is nan while training')
 
-            # Loss backward propagation
+            # 损失反向传播
             loss.backward()
 
-            # Optimize
+            # 参数更新
             optimizer.step()
 
             loss_of_epoch += loss.item()
@@ -235,24 +233,24 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
                       .format(key_word, epoch + 1, cur_epochs, iteration, step * cur_epochs, loss.item()))
 
         ################################
-        # The end of the current epoch #
+        # 当前 epoch 结束
         ################################
         if (epoch + 1) % 1 == 0:
 
-            # Calculate the average loss of the current epoch
+            # 计算当前 epoch 平均损失
             print('[{}] Epochs: {:d} finished ! Training loss: {:.5f}'
                   .format(key_word, epoch + 1, loss_of_epoch / i))
 
-            # Include the average loss in the array belonging to the current stage
+            # 将平均损失加入当前阶段数组
             loss_of_stage.append(loss_of_epoch / i)
 
-            # Statistics of the time spent in a epoch
+            # 统计当前 epoch 耗时
             time_elapsed = time.time() - cur_node_time
             print('[{}] Epochs consuming time: {:.0f}m {:.0f}s'
                   .format(key_word, time_elapsed // 60, time_elapsed % 60))
             training_time += time_elapsed
         #########################################################################
-        # When it reaches the point where intermediate results can be stored... #
+        # 达到中间结果保存点时... #
         #########################################################################
         if (epoch + 1) % save_epoch == 0:
             last_model_save_path = models_dir + model_save_name + '_CurEpo' + str(epoch + 1) + '.pkl'
@@ -265,10 +263,10 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
 
 def curriculum_learning_training(model_type):
     '''
-    Curriculum learning
+    课程学习训练
 
-    :param model_type:              The main model used, this model is differentiated based on different papers.
-                                    The available key model keywords are
+    :param model_type:              主模型类型，根据不同论文实现进行区分。
+                                    可用模型关键字为
                                     [DDNet70 | DDNet | InversionNet | FCNVMB| SDNet70 | SDNet]
     '''
     all_training_time = 0
@@ -279,7 +277,7 @@ def curriculum_learning_training(model_type):
 
 
     ###########
-    # Stage 1 #
+    # 阶段 1
     ###########
     if firststage_epochs != 0:
         print("read path: {}".format(init_model_src))
@@ -298,7 +296,7 @@ def curriculum_learning_training(model_type):
         gc.collect()
 
     ###########
-    # Stage 2 #
+    # 阶段 2
     ###########
     if secondstage_epochs != 0:
         print("read path: {}".format(stage1_net_src))
@@ -317,7 +315,7 @@ def curriculum_learning_training(model_type):
         gc.collect()
 
     ###########
-    # Stage 3 #
+    # 阶段 3
     ###########
     if thirdstage_epochs != 0:
         print("read path: {}".format(stage2_net_src))
