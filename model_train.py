@@ -24,6 +24,7 @@ import torch.utils.data as data_utils
 import gc
 import torch.nn.functional as F
 
+
 def determine_network(external_model_src="", model_type="DDNet", lr=None):
     '''
     获取网络对象并导入外部模型，或创建初始化模型
@@ -36,7 +37,8 @@ def determine_network(external_model_src="", model_type="DDNet", lr=None):
     '''
 
     device, cuda_available, resolved_mode = get_runtime_device(device_mode)
-    print("[Device] mode={} resolved={} cuda_available={}".format(resolved_mode, device.type, torch.cuda.is_available()))
+    print(
+        "[Device] mode={} resolved={} cuda_available={}".format(resolved_mode, device.type, torch.cuda.is_available()))
     gpus = [0]
 
     # 网络初始化
@@ -91,7 +93,8 @@ def determine_network(external_model_src="", model_type="DDNet", lr=None):
 
     return net_model, device, optimizer
 
-def load_dataset(stage = 3):
+
+def load_dataset(stage=3):
     '''
     根据 "param_config" 中参数加载训练数据
 
@@ -156,7 +159,9 @@ def load_dataset(stage = 3):
 
     return seis_and_vm_loader, data_set, label_sets
 
-def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_times = 1, key_word = "CLstage1", model_type = "DDNet"):
+
+def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_times=1, key_word="CLstage1",
+                        model_type="DDNet"):
     '''
     按指定轮次进行训练
 
@@ -173,7 +178,7 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
 
     loss_of_stage = []
     last_model_save_path = ""
-    step = int(train_size / train_batch_size)       # 训练总 batch 数
+    step = int(train_size / train_batch_size)  # 训练总 batch 数
     save_epoch = cur_epochs // save_times
     training_time = 0
 
@@ -240,7 +245,6 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
         # 当前 epoch 结束
         ################################
         if (epoch + 1) % 1 == 0:
-
             # 计算当前 epoch 平均损失
             print('[{}] Epochs: {:d} finished ! Training loss: {:.5f}'
                   .format(key_word, epoch + 1, loss_of_epoch / max(1, batch_count)))
@@ -265,6 +269,7 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
 
     return last_model_save_path, training_time
 
+
 def curriculum_learning_training(model_type, init_model_src="", finetune_lr_scale=1.0):
     '''
     课程学习训练
@@ -282,7 +287,6 @@ def curriculum_learning_training(model_type, init_model_src="", finetune_lr_scal
     print("[Train] finetune_lr_scale={} effective_lr={}".format(finetune_lr_scale, effective_lr))
     if init_model_src:
         print("[Train] load pretrained checkpoint: {}".format(init_model_src))
-
 
     ###########
     # 阶段 1
@@ -362,8 +366,8 @@ def curriculum_learning_training(model_type, init_model_src="", finetune_lr_scal
 # 训练手动参数（不通过命令行传入）
 TRAIN_MANUAL_CONFIG = {
     "model_type": model_type,
-    "load_pretrained": "",
-    "finetune_lr_scale": 1.0,
+    "load_pretrained": "models_pretrain/CurveFaultAModel/DDNet70_SrcMix2_TgtCurveFaultA_PreEpo2_20260309_232035.pkl",
+    "finetune_lr_scale": 0.1,
 }
 
 if __name__ == "__main__":

@@ -13,12 +13,12 @@ Created on Feb 2023
 ####################################################
 
 # 可选数据集: SEGSalt|SEGSimulation|FlatVelA|CurveFaultA|FlatFaultA|CurveVelA)
-dataset_name  = 'CurveFaultA'
+dataset_name = 'CurveFaultA'
 learning_rate = 0.001                               # 学习率
 classes = 1                                         # 输出通道数
 display_step = 2                                    # 打印一次 loss 所需训练步数
 model_type = 'DDNet70'
-device_mode = 'gpu'                                # auto|cpu|gpu（训练/测试脚本通用）
+device_mode = 'cpu'                                # auto|cpu|gpu（训练/测试脚本通用）
 
 ####################################################
 ####               数据集参数                 ####
@@ -116,9 +116,9 @@ elif dataset_name == 'CurveFaultA':
     # test_size = 6000
     test_size = 1000
 
-    firststage_epochs = 10
-    secondstage_epochs = 10
-    thirdstage_epochs = 100
+    firststage_epochs = 5
+    secondstage_epochs = 5
+    thirdstage_epochs = 5
     loss_weight = [1, 0.1]
     epochs = firststage_epochs + secondstage_epochs + thirdstage_epochs
 

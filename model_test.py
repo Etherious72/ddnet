@@ -633,7 +633,7 @@ def single_test(model_path, select_id, train_or_test = "test", model_type = "DDN
 if __name__ == "__main__":
     # 测试手动参数（不通过命令行传入）
     TEST_MANUAL_CONFIG = {
-        "compare_config": "compare_models.json",
+        "compare_config": "compare_models.pretrain.json",
     }
 
     compare_config = None
