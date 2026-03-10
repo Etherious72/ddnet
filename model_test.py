@@ -33,13 +33,16 @@ import torch.utils.data as data_utils
 import matplotlib
 matplotlib.use('TkAgg')
 
-
 VALID_MODEL_TYPES = {"DDNet", "DDNet70", "InversionNet", "FCNVMB", "SDNet", "SDNet70"}
 
 
 def _model_tag(model_path):
     base_name = os.path.splitext(os.path.basename(model_path))[0]
     return base_name.replace(' ', '_')
+
+
+def _normalize_path(path):
+    return path.replace("\\", "/") if path else path
 
 
 def _to_bool(value):
@@ -546,6 +549,7 @@ def single_test(model_path, select_id, train_or_test = "test", model_type = "DDN
 
     _save_single_metrics(model_path, model_type, select_id, mse, mae, uqi, lpi, time_elapsed)
 
+    '''
     # 显示和/或保存预览图
     save_preview = bool(save_preview)
     show_preview = bool(show_preview)
@@ -562,15 +566,16 @@ def single_test(model_path, select_id, train_or_test = "test", model_type = "DDN
             "per_sample_seconds": float(time_elapsed),
         }
 
-    preview_dir = os.path.join(results_dir, "previews")
+    preview_dir = _normalize_path(os.path.join(results_dir, "previews"))
     if save_preview:
         os.makedirs(preview_dir, exist_ok=True)
 
     safe_select_id = str(select_id).replace(' ', '').replace('[', '').replace(']', '').replace(',', '-')
     preview_prefix = "{}_{}_{}_{}".format(dataset_name, model_type, _model_tag(model_path), safe_select_id)
-    seismic_path = os.path.join(preview_dir, preview_prefix + "_seismic.png") if save_preview else None
-    gt_path = os.path.join(preview_dir, preview_prefix + "_gt.png") if save_preview else None
-    pred_path = os.path.join(preview_dir, preview_prefix + "_pred.png") if save_preview else None
+    seismic_path = _normalize_path(os.path.join(preview_dir, preview_prefix + "_seismic.png")) if save_preview else None
+    gt_path = _normalize_path(os.path.join(preview_dir, preview_prefix + "_gt.png")) if save_preview else None
+    pred_path = _normalize_path(os.path.join(preview_dir, preview_prefix + "_pred.png")) if save_preview else None
+
 
     if dataset_name in ['SEGSalt', 'SEGSimulation']:
         pain_seg_seismic_data(
@@ -629,7 +634,7 @@ def single_test(model_path, select_id, train_or_test = "test", model_type = "DDN
         "elapsed_seconds": float(time_elapsed),
         "per_sample_seconds": float(time_elapsed),
     }
-
+'''
 if __name__ == "__main__":
     # 测试手动参数（不通过命令行传入）
     TEST_MANUAL_CONFIG = {

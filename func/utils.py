@@ -23,7 +23,6 @@ import scipy
 
 import matplotlib as mpl
 mpl.use('TkAgg')
-
 import matplotlib.pylab as plt
 
 
@@ -110,11 +109,11 @@ def pain_openfwi_seismic_data(para_seismic_data, is_colorbar = 1, save_path = No
         plt.colorbar(im, ax=ax, cax=cax, orientation='horizontal')
 
         plt.subplots_adjust(bottom=0.08, top=0.98, left=0.11, right=0.99)
-
-    if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
     if show:
         plt.show()
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+
     plt.close(fig)
 
 def pain_openfwi_velocity_model(para_velocity_model, min_velocity, max_velocity, is_colorbar = 1, save_path = None, show = True):

@@ -14,6 +14,7 @@ import os
 
 import torch
 
+import model_train as train_module
 from model_train import curriculum_learning_training
 from net.DDNet import DDNetModel, SDNetModel
 from net.DDNet70 import DDNet70Model, SDNet70Model
@@ -35,10 +36,11 @@ from param_config import (
 # 手动配置区（不使用命令行参数）
 MANUAL_CONFIG = {
     "model_type": model_type,
-    "pretrained_path": "",  # 例如：models_pretrain/CurveFaultAModel/xxx.pth 或 xxx.pkl
+    "pretrained_path": "models_pretrain/CurveFaultAModel/MSAE_Src2_TgtCurveFaultA_Epo5_20260310_000649.pth",  # 例如：models_pretrain/CurveFaultAModel/xxx.pth 或 xxx.pkl
     "finetune_lr_scale": 0.1,
     "strict_pretrained_match": False,   # True: 不兼容直接报错
     "allow_scratch_fallback": True,     # True: 不兼容时从头训练
+    "models_root": "models_selfsup",
 }
 
 
@@ -122,6 +124,12 @@ def main():
     cfg = MANUAL_CONFIG
     if cfg["finetune_lr_scale"] <= 0:
         raise ValueError("finetune_lr_scale 必须 > 0")
+
+    models_root = cfg.get("models_root", "models")
+    target_models_dir = os.path.join(models_root, "{}Model".format(dataset_name))
+    os.makedirs(target_models_dir, exist_ok=True)
+    train_module.models_dir = target_models_dir
+    print("[Finetune] 输出模型目录: {}".format(target_models_dir))
 
     init_ckpt = resolve_init_checkpoint(cfg)
     curriculum_learning_training(
