@@ -16,6 +16,21 @@ from net.DDNet70 import DDNet70Model, SDNet70Model, LossDDNet
 from net.DDNet import DDNetModel, SDNetModel
 from func.device_selector import get_runtime_device
 from math import ceil
+import os
+
+# Current run identifier for this training session (one ID per full training using implicit mode)
+CURRENT_TRAIN_RUN_ID = None
+
+
+def _training_mode_dir():
+    '''
+    Determine training mode directory based on load_pretrained presence (implicit mode).
+    Returns:
+        'used_pretrain'  -> finetune from pretrained weights
+        'unused_pretrain' -> from-scratch training
+    '''
+    load_path = TRAIN_MANUAL_CONFIG.get("load_pretrained", "")
+    return "used_pretrain" if (load_path is not None and str(load_path).strip() != "") else "unused_pretrain"
 
 import time
 import numpy as np
@@ -176,6 +191,14 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
     :return:                模型保存路径
     '''
 
+    # Determine output directory for this run (implicit mode: used_pretrain/unused_pretrain)
+    global CURRENT_TRAIN_RUN_ID
+    mode_dir = _training_mode_dir()
+    if CURRENT_TRAIN_RUN_ID is None:
+        CURRENT_TRAIN_RUN_ID = time.strftime("%Y%m%d_%H%M%S")
+    per_run_root = os.path.join(results_dir, mode_dir, model_type, dataset_name, CURRENT_TRAIN_RUN_ID)
+    os.makedirs(per_run_root, exist_ok=True)
+
     loss_of_stage = []
     last_model_save_path = ""
     step = int(train_size / train_batch_size)  # 训练总 batch 数
@@ -260,12 +283,12 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
         #########################################################################
         # 达到中间结果保存点时... #
         #########################################################################
-        if (epoch + 1) % save_epoch == 0:
-            last_model_save_path = models_dir + model_save_name + '_CurEpo' + str(epoch + 1) + '.pkl'
-            torch.save(model.state_dict(), last_model_save_path)
-            print('[' + key_word + '] Trained model saved: %d percent completed' % int((epoch + 1) * 100 / cur_epochs))
+            if (epoch + 1) % save_epoch == 0:
+                last_model_save_path = os.path.join(per_run_root, model_save_name + '_CurEpo' + str(epoch + 1) + '.pkl')
+                torch.save(model.state_dict(), last_model_save_path)
+                print('[' + key_word + '] Trained model saved: %d percent completed' % int((epoch + 1) * 100 / cur_epochs))
 
-        np.save(results_dir + "[Loss]" + model_save_name + ".npy", np.array(loss_of_stage))
+        np.save(os.path.join(per_run_root, "[Loss]" + model_save_name + ".npy"), np.array(loss_of_stage))
 
     return last_model_save_path, training_time
 
@@ -278,6 +301,13 @@ def curriculum_learning_training(model_type, init_model_src="", finetune_lr_scal
                                     可用模型关键字为
                                     [DDNet70 | DDNet | InversionNet | FCNVMB| SDNet70 | SDNet]
     '''
+    # Initialize training run metadata (implicit mode based on load_pretrained)
+    global CURRENT_TRAIN_RUN_ID
+    mode_dir = _training_mode_dir()
+    if CURRENT_TRAIN_RUN_ID is None:
+        CURRENT_TRAIN_RUN_ID = time.strftime("%Y%m%d_%H%M%S")
+    print("[Train] mode_dir={}, run_id={}".format(mode_dir, CURRENT_TRAIN_RUN_ID))
+
     all_training_time = 0
 
     stage1_net_src = ""
