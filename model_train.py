@@ -206,7 +206,7 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
     save_epoch = cur_epochs // save_times
     training_time = 0
 
-    model_save_name = "{}_{}_TrSize{}_AllEpo{}".format(dataset_name, key_word, train_size, cur_epochs)
+    model_save_name = "{}_{}_{}_TrSize{}_AllEpo{}".format(dataset_name, key_word, mode_dir, train_size, cur_epochs)
 
     model_device = next(model.parameters()).device
 
