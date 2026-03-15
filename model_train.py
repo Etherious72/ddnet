@@ -17,6 +17,7 @@ from net.DDNet import DDNetModel, SDNetModel
 from func.device_selector import get_runtime_device
 from math import ceil
 import os
+import json
 
 # Current run identifier for this training session (one ID per full training using implicit mode)
 CURRENT_TRAIN_RUN_ID = None
@@ -307,6 +308,32 @@ def curriculum_learning_training(model_type, init_model_src="", finetune_lr_scal
     if CURRENT_TRAIN_RUN_ID is None:
         CURRENT_TRAIN_RUN_ID = time.strftime("%Y%m%d_%H%M%S")
     print("[Train] mode_dir={}, run_id={}".format(mode_dir, CURRENT_TRAIN_RUN_ID))
+
+    # Write a simple run metadata file for traceability (implicit mode)
+    run_base_root = os.path.join(results_dir, mode_dir, model_type, dataset_name, CURRENT_TRAIN_RUN_ID)
+    os.makedirs(run_base_root, exist_ok=True)
+    run_meta_path = os.path.join(run_base_root, "run_meta.json")
+    run_meta = {
+        "mode_dir": mode_dir,
+        "run_id": CURRENT_TRAIN_RUN_ID,
+        "model_type": model_type,
+        "load_pretrained": TRAIN_MANUAL_CONFIG.get("load_pretrained", ""),
+        "finetune_lr_scale": finetune_lr_scale,
+        "learning_rate": learning_rate,
+        "train_size": train_size,
+        "train_batch_size": train_batch_size,
+        "firststage_epochs": firststage_epochs,
+        "secondstage_epochs": secondstage_epochs,
+        "thirdstage_epochs": thirdstage_epochs,
+        "dataset": dataset_name,
+        "inchannels": inchannels,
+        "classes": classes,
+    }
+    try:
+        with open(run_meta_path, 'w') as f:
+            json.dump(run_meta, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
 
     all_training_time = 0
 
