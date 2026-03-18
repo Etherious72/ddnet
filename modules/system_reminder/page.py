@@ -4,6 +4,84 @@ from PyQt5.QtGui import QFont, QPixmap, QPainter
 import os
 from .base_button import BaseButton
 from .ui_styles import button_style
+from func.utils import plot_loss_from_npy
+
+
+class LossPanel(QWidget):
+    """Panel that displays a single dataset loss curve.
+    It loads a loss.npy corresponding to the selected dataset and renders
+    the curve using the shared plotting utility. The image is shown in a QLabel.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        self.title_label = QLabel("Loss Curve", self)
+        self.title_label.setAlignment(Qt.AlignCenter)
+        font = self.title_label.font()
+        font.setPointSize(12)
+        self.title_label.setFont(font)
+        layout.addWidget(self.title_label)
+
+        self.image_label = QLabel(self)
+        self.image_label.setAlignment(Qt.AlignCenter)
+        # Placeholder until a real loss curve is loaded
+        placeholder = self._placeholder_pix()
+        self.image_label.setPixmap(placeholder)
+        layout.addWidget(self.image_label)
+
+        self.status_label = QLabel(self)
+        self.status_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.status_label)
+
+        self.setLayout(layout)
+
+    def load_loss(self, dataset_name: str) -> None:
+
+        self.status_label.setText("加载中…")
+        # TODO loss折线图的路径
+        npy_path = f"/<system-reminder>/{dataset_name}_loss.npy"
+        try:
+            # Use the shared utility to generate the loss plot
+            plot_loss_from_npy(npy_path, save_path=None, show=False)
+            # Try to load the generated image from a common location
+            img_path = self._resolve_latest_image_path(dataset_name)
+            if img_path and os.path.exists(img_path):
+                self.image_label.setPixmap(QPixmap(img_path))
+                self.status_label.setText("加载完成")
+            else:
+                self.image_label.setPixmap(self._placeholder_pix())
+                self.status_label.setText("曲线图未生成，或未找到图像文件")
+        except Exception as e:
+            self.image_label.setPixmap(self._placeholder_pix())
+            self.status_label.setText(f"加载失败: {str(e)}")
+
+    def _resolve_latest_image_path(self, dataset_name: str) -> str:
+        # Try a few common save locations produced by plot_loss_from_npy.
+        base_dir = os.path.join(os.getcwd(), "system_reminder")
+        # 1) direct expected path
+        direct = os.path.join(base_dir, f"{dataset_name}_loss.npy_loss_curve.png")
+        if os.path.exists(direct):
+            return direct
+        # 2) any file containing dataset name and ending with _loss_curve.png
+        if os.path.isdir(base_dir):
+            for fname in os.listdir(base_dir):
+                if dataset_name.lower() in fname.lower() and fname.endswith("_loss_curve.png"):
+                    return os.path.join(base_dir, fname)
+        # 3) any loss curve image in the base dir
+        if os.path.isdir(base_dir):
+            for fname in os.listdir(base_dir):
+                if fname.endswith("_loss_curve.png"):
+                    return os.path.join(base_dir, fname)
+        return ""
+
+    def _placeholder_pix(self) -> QPixmap:
+        pix = QPixmap(640, 360)
+        pix.fill(Qt.lightGray)
+        return pix
 
 class SystemReminderPage(QWidget):
     # Simple home page for system reminder with titles only
@@ -71,33 +149,40 @@ class TrainingView(QWidget):
 
         right_widget = QWidget(self)
         right_layout = QVBoxLayout(right_widget)
+        self.loss_panel = LossPanel(self)
+        right_layout.addWidget(self.loss_panel)
         self.image_label = QLabel(self)
         self.image_label.setAlignment(Qt.AlignCenter)
-        pix = self._load_placeholder_image()
-        self.image_label.setPixmap(pix)
+        # pix = self._load_placeholder_image()
+        # self.image_label.setPixmap(pix)
         right_layout.addWidget(self.image_label, alignment=Qt.AlignCenter)
         root.addWidget(right_widget, 2)
         self.setLayout(root)
-        self.start_btn.clicked.connect(self.train_requested.emit)
+        self.start_btn.clicked.connect(self._on_show_loss)
         self.back_btn.clicked.connect(self.back_requested.emit)
 
-    def _load_placeholder_image(self):
-        base = os.path.dirname(__file__)
-        path = os.path.join(base, 'resources', 'system_reminder.png')
-        if os.path.exists(path):
-            pix = QPixmap(path)
-            if not pix.isNull():
-                return pix
-        pix = QPixmap(320, 240)
-        pix.fill(Qt.white)
-        painter = QPainter(pix)
-        painter.setPen(Qt.black)
-        font = QFont()
-        font.setPointSize(14)
-        painter.setFont(font)
-        painter.drawText(pix.rect(), Qt.AlignCenter, "<system-reminder>")
-        painter.end()
-        return pix
+    def _on_show_loss(self):
+        dataset = self.combo.currentText()
+        if dataset:
+            self.loss_panel.load_loss(dataset)
+
+    # def _load_placeholder_image(self):
+    #     base = os.path.dirname(__file__)
+    #     path = os.path.join(base, 'resources', 'system_reminder.png')
+    #     if os.path.exists(path):
+    #         pix = QPixmap(path)
+    #         if not pix.isNull():
+    #             return pix
+    #     pix = QPixmap(320, 240)
+    #     pix.fill(Qt.white)
+    #     painter = QPainter(pix)
+    #     painter.setPen(Qt.black)
+    #     font = QFont()
+    #     font.setPointSize(14)
+    #     painter.setFont(font)
+    #     painter.drawText(pix.rect(), Qt.AlignCenter, "<system-reminder>")
+    #     painter.end()
+    #     return pix
 
 
 class CompareView(QWidget):

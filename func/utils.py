@@ -614,4 +614,5 @@ def run_lpips(GT, P, lp):
     return lp.forward(GT_tensor, P_tensor).item()
 
 
-plot_loss_from_npy("../results/CurveFaultAResults/[Loss]CurveFaultA_CLStage1_TrSize3_AllEpo5.npy")
+if __name__ == "__main__":
+    plot_loss_from_npy("../results/CurveFaultAResults/[Loss]CurveFaultA_CLStage1_TrSize3_AllEpo5.npy")
