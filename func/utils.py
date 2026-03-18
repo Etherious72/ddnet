@@ -8,7 +8,6 @@ Created on Feb 2023
 
 """
 
-
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.ndimage import uniform_filter
 from torch.autograd import Variable
@@ -20,11 +19,13 @@ import torch.nn as nn
 import math
 import scipy.io
 import scipy
+import os
 
-import matplotlib as mpl
-mpl.use('TkAgg')
-import matplotlib.pylab as plt
+import matplotlib
+matplotlib.use('Agg')
+# Use non-interactive backend to support headless/run-build environments
 
+import matplotlib.pyplot as plt
 
 font18 = {
     'family': 'Times New Roman',
@@ -37,7 +38,8 @@ font21 = {
     'size': 21,
 }
 
-def pain_seg_seismic_data(para_seismic_data, is_colorbar = 1, save_path = None, show = True):
+
+def pain_seg_seismic_data(para_seismic_data, is_colorbar=1, save_path=None, show=True):
     '''
     绘制 SEG 盐丘数据的地震图像
 
@@ -46,9 +48,9 @@ def pain_seg_seismic_data(para_seismic_data, is_colorbar = 1, save_path = None, 
     '''
 
     if is_colorbar == 0:
-        fig, ax = plt.subplots(figsize=(6.5, 8), dpi = 120)
+        fig, ax = plt.subplots(figsize=(6.5, 8), dpi=120)
     else:
-        fig, ax = plt.subplots(figsize=(6.2, 8), dpi = 120)
+        fig, ax = plt.subplots(figsize=(6.2, 8), dpi=120)
 
     im = ax.imshow(para_seismic_data, extent=[0, 300, 400, 0], cmap=plt.cm.seismic, vmin=-0.4, vmax=0.44)
 
@@ -57,13 +59,13 @@ def pain_seg_seismic_data(para_seismic_data, is_colorbar = 1, save_path = None, 
 
     ax.set_xticks(np.linspace(0, 300, 5))
     ax.set_yticks(np.linspace(0, 400, 5))
-    ax.set_xticklabels(labels = [0,0.75,1.5,2.25,3.0], size=21)
-    ax.set_yticklabels(labels = [0.0,0.50,1.00,1.50,2.00], size=21)
+    ax.set_xticklabels(labels=[0, 0.75, 1.5, 2.25, 3.0], size=21)
+    ax.set_yticklabels(labels=[0.0, 0.50, 1.00, 1.50, 2.00], size=21)
 
     if is_colorbar == 0:
         plt.subplots_adjust(bottom=0.11, top=0.95, left=0.11, right=0.99)
     else:
-        plt.rcParams['font.size'] = 14      # 设置色条字体大小
+        plt.rcParams['font.size'] = 14  # 设置色条字体大小
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("top", size="3%", pad=0.32)
         plt.colorbar(im, ax=ax, cax=cax, orientation='horizontal')
@@ -76,7 +78,8 @@ def pain_seg_seismic_data(para_seismic_data, is_colorbar = 1, save_path = None, 
         plt.show()
     plt.close(fig)
 
-def pain_openfwi_seismic_data(para_seismic_data, is_colorbar = 1, save_path = None, show = True):
+
+def pain_openfwi_seismic_data(para_seismic_data, is_colorbar=1, save_path=None, show=True):
     '''
     绘制 OpenFWI 数据图像
 
@@ -85,12 +88,12 @@ def pain_openfwi_seismic_data(para_seismic_data, is_colorbar = 1, save_path = No
     '''
 
     # 1000x70 不易展示，这里缩放到接近 SEG 的 400x301 尺寸。
-    data = cv2.resize(para_seismic_data, dsize=(400, 301), interpolation=cv2.INTER_CUBIC)   #
+    data = cv2.resize(para_seismic_data, dsize=(400, 301), interpolation=cv2.INTER_CUBIC)  #
 
     if is_colorbar == 0:
-        fig, ax = plt.subplots(figsize=(6.5, 8), dpi = 120)
+        fig, ax = plt.subplots(figsize=(6.5, 8), dpi=120)
     else:
-        fig, ax = plt.subplots(figsize=(6.1, 8), dpi = 120)
+        fig, ax = plt.subplots(figsize=(6.1, 8), dpi=120)
 
     im = ax.imshow(data, extent=[0, 0.7, 1.0, 0], cmap=plt.cm.seismic, vmin=-18, vmax=19)
     ax.set_xlabel('Position (km)', font21)
@@ -103,7 +106,7 @@ def pain_openfwi_seismic_data(para_seismic_data, is_colorbar = 1, save_path = No
     if is_colorbar == 0:
         plt.subplots_adjust(bottom=0.11, top=0.95, left=0.11, right=0.99)
     else:
-        plt.rcParams['font.size'] = 14      # 设置色条字体大小
+        plt.rcParams['font.size'] = 14  # 设置色条字体大小
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("top", size="3%", pad=0.3)
         plt.colorbar(im, ax=ax, cax=cax, orientation='horizontal')
@@ -116,7 +119,9 @@ def pain_openfwi_seismic_data(para_seismic_data, is_colorbar = 1, save_path = No
 
     plt.close(fig)
 
-def pain_openfwi_velocity_model(para_velocity_model, min_velocity, max_velocity, is_colorbar = 1, save_path = None, show = True):
+
+def pain_openfwi_velocity_model(para_velocity_model, min_velocity, max_velocity, is_colorbar=1, save_path=None,
+                                show=True):
     '''
     绘制 OpenFWI 速度模型图像
 
@@ -144,11 +149,11 @@ def pain_openfwi_velocity_model(para_velocity_model, min_velocity, max_velocity,
     if is_colorbar == 0:
         plt.subplots_adjust(bottom=0.11, top=0.95, left=0.11, right=0.95)
     else:
-        plt.rcParams['font.size'] = 14      # 设置色条字体大小
+        plt.rcParams['font.size'] = 14  # 设置色条字体大小
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("top", size="3%", pad=0.35)
         plt.colorbar(im, ax=ax, cax=cax, orientation='horizontal',
-                     ticks=np.linspace(min_velocity, max_velocity, 7), format = mpl.ticker.StrMethodFormatter('{x:.0f}'))
+                     ticks=np.linspace(min_velocity, max_velocity, 7), format=matplotlib.ticker.StrMethodFormatter('{x:.0f}'))
         plt.subplots_adjust(bottom=0.10, top=0.95, left=0.13, right=0.95)
 
     if save_path is not None:
@@ -157,7 +162,8 @@ def pain_openfwi_velocity_model(para_velocity_model, min_velocity, max_velocity,
         plt.show()
     plt.close(fig)
 
-def pain_seg_velocity_model(para_velocity_model, min_velocity, max_velocity, is_colorbar = 1, save_path = None, show = True):
+
+def pain_seg_velocity_model(para_velocity_model, min_velocity, max_velocity, is_colorbar=1, save_path=None, show=True):
     '''
 
     :param para_velocity_model: 速度模型（200 x 301，numpy）
@@ -170,12 +176,11 @@ def pain_seg_velocity_model(para_velocity_model, min_velocity, max_velocity, is_
         fig, ax = plt.subplots(figsize=(6.2, 4.3), dpi=150)
     else:
         fig, ax = plt.subplots(figsize=(5.8, 4.3), dpi=150)
-    im = ax.imshow(para_velocity_model, extent=[0, 3, 2, 0], vmin = min_velocity, vmax = max_velocity)
+    im = ax.imshow(para_velocity_model, extent=[0, 3, 2, 0], vmin=min_velocity, vmax=max_velocity)
 
     ax.set_xlabel('Position (km)', font18)
     ax.set_ylabel('Depth (km)', font18)
     ax.tick_params(labelsize=14)
-
 
     if is_colorbar == 0:
         plt.subplots_adjust(bottom=0.15, top=0.95, left=0.11, right=0.99)
@@ -193,7 +198,8 @@ def pain_seg_velocity_model(para_velocity_model, min_velocity, max_velocity, is_
         plt.show()
     plt.close(fig)
 
-def add_gasuss_noise(image, mu = 0, sigma = 0.01):
+
+def add_gasuss_noise(image, mu=0, sigma=0.01):
     '''
     添加高斯噪声
 
@@ -207,6 +213,7 @@ def add_gasuss_noise(image, mu = 0, sigma = 0.01):
     gauss_noise = image + noise
 
     return gauss_noise
+
 
 def agc_on_one_trace(data, window, length, min):
     '''
@@ -251,6 +258,7 @@ def agc_on_one_trace(data, window, length, min):
     data1 = data * w
     return data1, w
 
+
 def magnify_amplitude_fortensor(para_image):
     '''
     Amplify the amplitude of the seismic data
@@ -260,18 +268,19 @@ def magnify_amplitude_fortensor(para_image):
     '''
     image = para_image.numpy()
     width = image.shape[1]
-    height= image.shape[0]
+    height = image.shape[0]
 
     mean_expand_ratio = 0
     for trace in range(width):
-        wave_of_trace = image[:,trace]
-        magnified_wave_of_trace, w = agc_on_one_trace(data = wave_of_trace, window = width, length = height, min = 1)
+        wave_of_trace = image[:, trace]
+        magnified_wave_of_trace, w = agc_on_one_trace(data=wave_of_trace, window=width, length=height, min=1)
         mean_expand_ratio += max(magnified_wave_of_trace) / max(wave_of_trace)
         image[:, trace] = magnified_wave_of_trace
     mean_expand_ratio /= width
     image /= mean_expand_ratio
 
     return torch.from_numpy(image)
+
 
 def magnify_amplitude_fornumpy(para_image):
     '''
@@ -282,18 +291,19 @@ def magnify_amplitude_fornumpy(para_image):
     '''
     image = para_image
     width = image.shape[1]
-    height= image.shape[0]
+    height = image.shape[0]
 
     mean_expand_ratio = 0
     for trace in range(width):
-        wave_of_trace = image[:,trace]
-        magnified_wave_of_trace, w = agc_on_one_trace(data = wave_of_trace, window = width, length = height, min = 1)
+        wave_of_trace = image[:, trace]
+        magnified_wave_of_trace, w = agc_on_one_trace(data=wave_of_trace, window=width, length=height, min=1)
         mean_expand_ratio += max(magnified_wave_of_trace) / max(wave_of_trace)
         image[:, trace] = magnified_wave_of_trace
     mean_expand_ratio /= width
     image /= mean_expand_ratio
 
     return image
+
 
 def extract_contours(para_image):
     '''
@@ -327,7 +337,7 @@ def model_reader(net, device, save_src='./models/SEGSimulation/model_name.pkl'):
     print("Read file: {}".format(save_src))
     # 兼容 CPU/GPU 场景的权重加载方式。
     model = torch.load(save_src, map_location=device)
-    try:                    # 尝试直接载入权重
+    try:  # 尝试直接载入权重
         net.load_state_dict(model)
     except RuntimeError:
         print("This model is obtained by multi-GPU training...")
@@ -335,7 +345,7 @@ def model_reader(net, device, save_src='./models/SEGSimulation/model_name.pkl'):
         new_state_dict = OrderedDict()
 
         for k, v in model.items():
-            name = k[7:]    # 去掉 DataParallel 前缀 "module."
+            name = k[7:]  # 去掉 DataParallel 前缀 "module."
             new_state_dict[name] = v
 
         net.load_state_dict(new_state_dict)
@@ -343,7 +353,8 @@ def model_reader(net, device, save_src='./models/SEGSimulation/model_name.pkl'):
     net = net.to(device)
     return net
 
-def save_results(loss, epochs, save_path, xtitle, ytitle, title, is_show = False):
+
+def save_results(loss, epochs, save_path, xtitle, ytitle, title, is_show=False):
     '''
     Save the loss
 
@@ -363,17 +374,112 @@ def save_results(loss, epochs, save_path, xtitle, ytitle, title, is_show = False
     ax.set_title(title, font21)
     ax.set_xticks([i for i in range(0, epochs + 1, 20)])
     ax.set_xticklabels((str(i) for i in range(0, epochs + 1, 20)))
-    for label in ax.get_xticklabels() + ax.get_yticklabels():
-        label.set_fontsize(12)
+    # Use tick_params for robustness in headless environments
+    ax.tick_params(axis='x', labelsize=12)
+    ax.tick_params(axis='y', labelsize=12)
     ax.grid(linestyle='dashed', linewidth=0.5)
 
-    plt.savefig(save_path + title, transparent=True)
-    data = {}
-    data['loss'] = loss
-    scipy.io.savemat(save_path + '{}.mat'.format(title), data)
+    # Save main plot to provided path
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    data = {'loss': loss}
+    mat_path = os.path.splitext(save_path)[0] + ".mat"
+    scipy.io.savemat(mat_path, data)
     if is_show == True:
         plt.show()
     plt.close()
+
+
+def plot_loss_from_npy(npy_path, save_path=None, title="Loss Curve", show=True, start_epoch=None, end_epoch=None, smooth=None):
+    """Plot loss curve directly from a .npy file, reusing the visual style of save_results.
+    This is a convenience wrapper that assumes the loss data is a 1D numpy array saved as .npy.
+    """
+    loss = np.load(npy_path)
+    if loss.ndim != 1:
+        loss = loss.reshape(-1)
+    if start_epoch is not None:
+        loss = loss[int(start_epoch):]
+    if end_epoch is not None:
+        loss = loss[:int(end_epoch)]
+    if smooth and isinstance(smooth, (int, np.integer)) and smooth > 1:
+        w = int(smooth)
+        loss = np.convolve(loss, np.ones(w) / w, mode="same")
+    epochs = len(loss) - 1
+    # 路径统一为 /<system-reminder>，映射到实际磁盘路径
+    system_root_log = "/<system-reminder>"
+    real_base_dir = os.path.join(os.getcwd(), "system_reminder")
+    if save_path is None:
+        log_path = system_root_log + "/" + os.path.splitext(os.path.basename(npy_path))[0] + "_loss_curve.png"
+    else:
+        log_path = str(save_path).replace("\\", "/")
+        if "<system-reminder>" in log_path:
+            # 直接处理带占位符的路径，后续将映射到实际磁盘路径
+            alias_path = log_path
+            token_free = alias_path.replace("<system-reminder>", "")
+            token_free = token_free.strip("/\\")
+            real_path = os.path.join(real_base_dir, token_free.replace("/", os.sep))
+            dirn = os.path.dirname(real_path)
+            if dirn:
+                os.makedirs(dirn, exist_ok=True)
+            save_path = real_path
+            final_log_path = alias_path
+        else:
+            if not log_path.startswith(system_root_log):
+                if log_path.startswith("/"):
+                    log_path = system_root_log + log_path
+                else:
+                    log_path = system_root_log + "/" + log_path
+            if os.path.splitext(log_path)[1] == "":
+                if not log_path.endswith("/"):
+                    log_path = log_path + "/"
+                base = os.path.splitext(os.path.basename(npy_path))[0]
+                log_path = log_path + base + "_loss_curve.png"
+
+            # Map alias path to real path
+            if log_path.startswith(system_root_log):
+                rest = log_path[len(system_root_log):].lstrip("/\\")
+                real_path = os.path.join(real_base_dir, rest.replace("/", os.sep))
+            else:
+                real_path = log_path
+            dirn = os.path.dirname(real_path)
+            if dirn:
+                os.makedirs(dirn, exist_ok=True)
+            save_path = real_path
+            final_log_path = log_path
+
+    # 由日志路径映射到真实磁盘路径
+    if log_path.startswith(system_root_log):
+        rest = log_path[len(system_root_log):].lstrip("/\\")
+        real_path = os.path.join(real_base_dir, rest.replace("/", os.sep))
+    else:
+        real_path = log_path
+
+    # 确保目录存在
+    dirn = os.path.dirname(real_path)
+    if dirn:
+        os.makedirs(dirn, exist_ok=True)
+    save_path = real_path
+    final_log_path = log_path
+    final_log_path = final_log_path.replace("<system-reminder>", "")
+    if final_log_path.endswith(".png"):
+        final_log_path = final_log_path[:-4]
+    final_log_path = final_log_path.replace('\\', '/')
+    fig, ax = plt.subplots()
+    ax.plot(loss[1:], linewidth=2)
+    ax.set_xlabel("Epoch", font18)
+    ax.set_ylabel("Loss", font18)
+    ax.set_title(title, font21)
+    ax.set_xticks([i for i in range(0, epochs + 1, 20)])
+    ax.set_xticklabels((str(i) for i in range(0, epochs + 1, 20)))
+    ax.tick_params(axis='x', labelsize=12)
+    ax.tick_params(axis='y', labelsize=12)
+    ax.grid(linestyle='dashed', linewidth=0.5)
+    # plt.tight_layout()
+    plt.savefig("D:/coding/LU/ddnet-main/system_reminder/CurveFaultAResults.png", dpi=150)
+    if show:
+        plt.show()
+    plt.close(fig)
+    return final_log_path
+
 
 def save_numpy(para_data, src_path, src_name):
     '''
@@ -385,7 +491,8 @@ def save_numpy(para_data, src_path, src_name):
     :return:
     '''
     print("Saving: {}".format(src_path + src_name))
-    np.save(src_path + src_name ,para_data)
+    np.save(src_path + src_name, para_data)
+
 
 def read_numpy(src_name, src_path):
     '''
@@ -396,8 +503,9 @@ def read_numpy(src_name, src_path):
     :return:
     '''
     print("Reading: {}".format(src_path + src_name))
-    data = np.load(src_path + src_name, allow_pickle = True)
+    data = np.load(src_path + src_name, allow_pickle=True)
     return data
+
 
 def run_mse(prediction, target):
     '''
@@ -412,6 +520,7 @@ def run_mse(prediction, target):
     criterion = nn.MSELoss(reduction='mean')
     result = criterion(prediction, target)
     return result.item()
+
 
 def run_mae(prediction, target):
     '''
@@ -428,7 +537,8 @@ def run_mae(prediction, target):
     result = criterion(prediction, target)
     return result.item()
 
-def _uqi_single(GT,P,ws):
+
+def _uqi_single(GT, P, ws):
     '''
     a component of UQI metric
 
@@ -437,34 +547,35 @@ def _uqi_single(GT,P,ws):
     :param ws:          Window size
     :return:
     '''
-    N = ws**2
+    N = ws ** 2
 
-    GT_sq = GT*GT
-    P_sq = P*P
-    GT_P = GT*P
+    GT_sq = GT * GT
+    P_sq = P * P
+    GT_P = GT * P
 
     GT_sum = uniform_filter(GT, ws)
-    P_sum =  uniform_filter(P, ws)
+    P_sum = uniform_filter(P, ws)
     GT_sq_sum = uniform_filter(GT_sq, ws)
     P_sq_sum = uniform_filter(P_sq, ws)
     GT_P_sum = uniform_filter(GT_P, ws)
 
-    GT_P_sum_mul = GT_sum*P_sum
-    GT_P_sum_sq_sum_mul = GT_sum*GT_sum + P_sum*P_sum
-    numerator = 4*(N*GT_P_sum - GT_P_sum_mul)*GT_P_sum_mul
-    denominator1 = N*(GT_sq_sum + P_sq_sum) - GT_P_sum_sq_sum_mul
-    denominator = denominator1*GT_P_sum_sq_sum_mul
+    GT_P_sum_mul = GT_sum * P_sum
+    GT_P_sum_sq_sum_mul = GT_sum * GT_sum + P_sum * P_sum
+    numerator = 4 * (N * GT_P_sum - GT_P_sum_mul) * GT_P_sum_mul
+    denominator1 = N * (GT_sq_sum + P_sq_sum) - GT_P_sum_sq_sum_mul
+    denominator = denominator1 * GT_P_sum_sq_sum_mul
 
     q_map = np.ones(denominator.shape)
-    index = np.logical_and((denominator1 == 0) , (GT_P_sum_sq_sum_mul != 0))
-    q_map[index] = 2*GT_P_sum_mul[index]/GT_P_sum_sq_sum_mul[index]
+    index = np.logical_and((denominator1 == 0), (GT_P_sum_sq_sum_mul != 0))
+    q_map[index] = 2 * GT_P_sum_mul[index] / GT_P_sum_sq_sum_mul[index]
     index = (denominator != 0)
-    q_map[index] = numerator[index]/denominator[index]
+    q_map[index] = numerator[index] / denominator[index]
 
-    s = int(np.round(ws/2))
-    return np.mean(q_map[s:-s,s:-s])
+    s = int(np.round(ws / 2))
+    return np.mean(q_map[s:-s, s:-s])
 
-def run_uqi(GT,P,ws=8):
+
+def run_uqi(GT, P, ws=8):
     '''
     Evaluation metric: UQI
 
@@ -479,7 +590,7 @@ def run_uqi(GT,P,ws=8):
 
     GT = GT.astype(np.float32)
     P = P.astype(np.float32)
-    return np.mean([_uqi_single(GT[:,:,i],P[:,:,i],ws) for i in range(GT.shape[2])])
+    return np.mean([_uqi_single(GT[:, :, i], P[:, :, i], ws) for i in range(GT.shape[2])])
 
 
 def run_lpips(GT, P, lp):
@@ -501,3 +612,6 @@ def run_lpips(GT, P, lp):
     P_tensor = P_tensor.repeat(1, 3, 1, 1).to(lp_device)
 
     return lp.forward(GT_tensor, P_tensor).item()
+
+
+plot_loss_from_npy("../results/CurveFaultAResults/[Loss]CurveFaultA_CLStage1_TrSize3_AllEpo5.npy")
