@@ -4,6 +4,7 @@ Run with: python ddnet-main/demo/qt_host_demo.py
 """
 import sys
 import os
+import faulthandler
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtCore import QTimer
 
@@ -19,6 +20,8 @@ except Exception:
     raise
 
 def main():
+    # Enable fault handler to diagnose crashes (segfaults, etc.)
+    faulthandler.enable()
     app = QApplication(sys.argv)
     window = QMainWindow()
     window.setWindowTitle("欢迎使用")
@@ -30,10 +33,9 @@ def main():
     # Initial content
     container.update_content("基于U-Net的地震反演系统")
 
-    window.resize(600, 400)
+    window.resize(1000, 800)
     window.show()
 
-    # Optional: simulate a content update after 3 seconds
     def update_later():
         container.update_content("更新：系统正在准备切换到新对比模型，界面将保持当前布局。")
 

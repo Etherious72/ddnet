@@ -61,6 +61,16 @@ class SystemReminderContainer(QWidget):
         self.stack.setCurrentWidget(self._training_view)
         self.train_requested.emit()
 
+    def show_training_loss(self):
+        # Public helper to navigate to training view and show loss
+        self._show_train()
+        if hasattr(self, "_training_view"):
+            tv = self._training_view
+            if hasattr(tv, "show_loss"):
+                tv.show_loss()
+            elif hasattr(tv, "_on_show_loss"):
+                tv._on_show_loss()
+
     def _show_compare(self):
         self.stack.setCurrentWidget(self._compare_view)
         self.compare_requested.emit()

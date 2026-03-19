@@ -7,7 +7,7 @@ Created on Feb 2023
 @author: Xing-Yi Zhang (zxy20004182@163.com)
 
 """
-
+from PyQt5.QtCore import QThread
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.ndimage import uniform_filter
 from torch.autograd import Variable
@@ -389,98 +389,6 @@ def save_results(loss, epochs, save_path, xtitle, ytitle, title, is_show=False):
     plt.close()
 
 
-def plot_loss_from_npy(npy_path, save_path=None, title="Loss Curve", show=True, start_epoch=None, end_epoch=None, smooth=None):
-    """Plot loss curve directly from a .npy file, reusing the visual style of save_results.
-    This is a convenience wrapper that assumes the loss data is a 1D numpy array saved as .npy.
-    """
-    loss = np.load(npy_path)
-    if loss.ndim != 1:
-        loss = loss.reshape(-1)
-    if start_epoch is not None:
-        loss = loss[int(start_epoch):]
-    if end_epoch is not None:
-        loss = loss[:int(end_epoch)]
-    if smooth and isinstance(smooth, (int, np.integer)) and smooth > 1:
-        w = int(smooth)
-        loss = np.convolve(loss, np.ones(w) / w, mode="same")
-    epochs = len(loss) - 1
-    # 路径统一为 /<system-reminder>，映射到实际磁盘路径
-    system_root_log = "/<system-reminder>"
-    real_base_dir = os.path.join(os.getcwd(), "system_reminder")
-    if save_path is None:
-        log_path = system_root_log + "/" + os.path.splitext(os.path.basename(npy_path))[0] + "_loss_curve.png"
-    else:
-        log_path = str(save_path).replace("\\", "/")
-        if "<system-reminder>" in log_path:
-            # 直接处理带占位符的路径，后续将映射到实际磁盘路径
-            alias_path = log_path
-            token_free = alias_path.replace("<system-reminder>", "")
-            token_free = token_free.strip("/\\")
-            real_path = os.path.join(real_base_dir, token_free.replace("/", os.sep))
-            dirn = os.path.dirname(real_path)
-            if dirn:
-                os.makedirs(dirn, exist_ok=True)
-            save_path = real_path
-            final_log_path = alias_path
-        else:
-            if not log_path.startswith(system_root_log):
-                if log_path.startswith("/"):
-                    log_path = system_root_log + log_path
-                else:
-                    log_path = system_root_log + "/" + log_path
-            if os.path.splitext(log_path)[1] == "":
-                if not log_path.endswith("/"):
-                    log_path = log_path + "/"
-                base = os.path.splitext(os.path.basename(npy_path))[0]
-                log_path = log_path + base + "_loss_curve.png"
-
-            # Map alias path to real path
-            if log_path.startswith(system_root_log):
-                rest = log_path[len(system_root_log):].lstrip("/\\")
-                real_path = os.path.join(real_base_dir, rest.replace("/", os.sep))
-            else:
-                real_path = log_path
-            dirn = os.path.dirname(real_path)
-            if dirn:
-                os.makedirs(dirn, exist_ok=True)
-            save_path = real_path
-            final_log_path = log_path
-
-    # 由日志路径映射到真实磁盘路径
-    if log_path.startswith(system_root_log):
-        rest = log_path[len(system_root_log):].lstrip("/\\")
-        real_path = os.path.join(real_base_dir, rest.replace("/", os.sep))
-    else:
-        real_path = log_path
-
-    # 确保目录存在
-    dirn = os.path.dirname(real_path)
-    if dirn:
-        os.makedirs(dirn, exist_ok=True)
-    save_path = real_path
-    final_log_path = log_path
-    final_log_path = final_log_path.replace("<system-reminder>", "")
-    if final_log_path.endswith(".png"):
-        final_log_path = final_log_path[:-4]
-    final_log_path = final_log_path.replace('\\', '/')
-    fig, ax = plt.subplots()
-    ax.plot(loss[1:], linewidth=2)
-    ax.set_xlabel("Epoch", font18)
-    ax.set_ylabel("Loss", font18)
-    ax.set_title(title, font21)
-    ax.set_xticks([i for i in range(0, epochs + 1, 20)])
-    ax.set_xticklabels((str(i) for i in range(0, epochs + 1, 20)))
-    ax.tick_params(axis='x', labelsize=12)
-    ax.tick_params(axis='y', labelsize=12)
-    ax.grid(linestyle='dashed', linewidth=0.5)
-    # plt.tight_layout()
-    plt.savefig("D:/coding/LU/ddnet-main/system_reminder/CurveFaultAResults.png", dpi=150)
-    if show:
-        plt.show()
-    plt.close(fig)
-    return final_log_path
-
-
 def save_numpy(para_data, src_path, src_name):
     '''
     Save numpy data in .npy format.
@@ -613,6 +521,3 @@ def run_lpips(GT, P, lp):
 
     return lp.forward(GT_tensor, P_tensor).item()
 
-
-if __name__ == "__main__":
-    plot_loss_from_npy("../results/CurveFaultAResults/[Loss]CurveFaultA_CLStage1_TrSize3_AllEpo5.npy")
