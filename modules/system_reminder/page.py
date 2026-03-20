@@ -8,10 +8,22 @@ from PyQt5.QtWidgets import (
     QDialog,
     QFileDialog,
     QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QPlainTextEdit,
+    QApplication,
 )
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QPixmap, QPainter, QPen, QColor
+from PyQt5.QtGui import QFont, QPixmap, QPainter, QPen, QColor, QFontMetrics
 import os
+import csv
+import glob
+import json
+import subprocess
+import sys
+import hashlib
+from datetime import datetime
 import numpy as np
 from func.datasets_reader import single_read_matfile, single_read_npyfile
 from .base_button import BaseButton
@@ -29,11 +41,14 @@ class LossPanel(QWidget):
         self.x_title = "Epoch"
         self.y_title = "Loss"
         self.title = "Training Loss"
+        self.train_label = "Train"
+        self.val_label = "Val"
         self.error_text = ""
 
     # ===== 外部调用接口 =====
     def set_data(self, train_loss, val_loss=None, smooth=None, epochs=None,
-                 x_title="Epoch", y_title="Loss", title="Training Loss"):
+                 x_title="Epoch", y_title="Loss", title="Training Loss",
+                 train_label="Train", val_label="Val"):
         self.train_loss = np.array(train_loss)
         self.val_loss = np.array(val_loss) if val_loss is not None else None
         self.smooth_window = smooth
@@ -41,6 +56,8 @@ class LossPanel(QWidget):
         self.x_title = x_title
         self.y_title = y_title
         self.title = title
+        self.train_label = train_label
+        self.val_label = val_label
         self.error_text = ""
         self.update()
 
@@ -61,26 +78,37 @@ class LossPanel(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
+        w = max(self.width(), 1)
+        h = max(self.height(), 1)
+        base = min(w, h)
+        scale = max(0.65, min(2.4, base / 700.0))
+
+        title_size = max(10, int(13 * scale))
+        axis_size = max(8, int(11 * scale))
+        tick_size = max(7, int(9 * scale))
+        error_size = max(9, int(11 * scale))
+
         if len(self.train_loss) < 2:
             painter.fillRect(self.rect(), QColor(250, 252, 255))
             painter.setPen(QColor(185, 74, 72))
             font = QFont()
-            font.setPointSize(11)
+            font.setPointSize(error_size)
             painter.setFont(font)
             msg = self.error_text if self.error_text else "暂无可显示数据"
             painter.drawText(self.rect(), Qt.AlignCenter, msg)
             return
 
-        w = self.width()
-        h = self.height()
-
-        left_margin = 88
-        right_margin = 28
-        top_margin = 52
-        bottom_margin = 88
+        left_margin = max(56, int(88 * scale))
+        right_margin = max(18, int(28 * scale))
+        top_margin = max(36, int(52 * scale))
+        bottom_margin = max(56, int(88 * scale))
+        left_margin = min(left_margin, int(w * 0.30))
+        right_margin = min(right_margin, int(w * 0.20))
+        top_margin = min(top_margin, int(h * 0.25))
+        bottom_margin = min(bottom_margin, int(h * 0.32))
         plot_w = w - left_margin - right_margin
         plot_h = h - top_margin - bottom_margin
-        if plot_w <= 20 or plot_h <= 20:
+        if plot_w <= 40 or plot_h <= 40:
             return
 
         # ===== 数据处理 =====
@@ -117,7 +145,7 @@ class LossPanel(QWidget):
             painter.drawLine(x, top_margin, x, h - bottom_margin)
 
         # ===== 坐标轴 =====
-        axis_pen = QPen(QColor(60, 60, 60), 2)
+        axis_pen = QPen(QColor(60, 60, 60), max(1, int(2 * scale)))
         painter.setPen(axis_pen)
 
         # x轴
@@ -127,7 +155,7 @@ class LossPanel(QWidget):
 
         # ===== 画曲线函数 =====
         def draw_curve(data, color):
-            pen = QPen(color, 2)
+            pen = QPen(color, max(1, int(2 * scale)))
             painter.setPen(pen)
 
             n = len(data)
@@ -143,8 +171,9 @@ class LossPanel(QWidget):
                                  points[i+1][0], points[i+1][1])
 
             step = max(n // 12, 1)
+            dot = max(2, int(4 * scale))
             for i in range(0, n, step):
-                painter.drawEllipse(points[i][0] - 2, points[i][1] - 2, 4, 4)
+                painter.drawEllipse(points[i][0] - dot // 2, points[i][1] - dot // 2, dot, dot)
 
         # ===== 画 train =====
         draw_curve(train, QColor(30, 144, 255))  # 蓝色
@@ -156,28 +185,56 @@ class LossPanel(QWidget):
         # ===== 标题 =====
         painter.setPen(QColor(35, 35, 35))
         font = QFont()
-        font.setPointSize(13)
+        font.setPointSize(title_size)
         font.setBold(True)
         painter.setFont(font)
 
-        painter.drawText(0, 14, w, 30, Qt.AlignCenter, self.title)
+        title_y = max(8, int(10 * scale))
+        title_h = max(24, int(30 * scale))
+        title_bottom = title_y + title_h
+        painter.drawText(0, title_y, w, title_h, Qt.AlignCenter, self.title)
 
-        # ===== 图例 =====
-        legend_y = 34
+        # ===== 图例（右上角自适应，避免文字被裁切） =====
+        font.setPointSize(max(8, int(10 * scale)))
+        font.setBold(False)
+        painter.setFont(font)
+        fm = QFontMetrics(font)
 
-        painter.setPen(QPen(QColor(30, 144, 255), 2))
-        painter.drawLine(w - 150, legend_y, w - 130, legend_y)
-        painter.setPen(Qt.black)
-        painter.drawText(w - 120, legend_y + 5, "Train")
-
+        line_len = max(12, int(20 * scale))
+        text_gap = max(6, int(8 * scale))
+        item_gap = max(10, int(14 * scale))
+        legend_items = [(QColor(30, 144, 255), self.train_label)]
         if val is not None:
-            painter.setPen(QPen(QColor(220, 20, 60), 2))
-            painter.drawLine(w - 80, legend_y, w - 60, legend_y)
+            legend_items.append((QColor(220, 20, 60), self.val_label))
+
+        total_w = 0
+        for _, label in legend_items:
+            total_w += line_len + text_gap + fm.horizontalAdvance(label) + item_gap
+        total_w = max(0, total_w - item_gap)
+
+        legend_x = max(left_margin + 4, w - right_margin - total_w - 4)
+        legend_y = min(
+            top_margin - max(10, int(16 * scale)),
+            title_bottom + max(22, int(30 * scale)),
+        )
+        legend_y = max(legend_y, max(32, int(42 * scale)))
+
+        cursor_x = legend_x
+        for color, label in legend_items:
+            painter.setPen(QPen(color, max(1, int(2 * scale))))
+            painter.drawLine(cursor_x, legend_y, cursor_x + line_len, legend_y)
+            cursor_x += line_len + text_gap
             painter.setPen(Qt.black)
-            painter.drawText(w - 50, legend_y + 5, "Val")
+            label_w = fm.horizontalAdvance(label)
+            painter.drawText(cursor_x, legend_y + max(5, int(6 * scale)), label)
+            cursor_x += label_w + item_gap
 
         # ===== 坐标刻度 =====
         # x 轴刻度：对齐 save_results，每 20 一个刻度，范围 [0, epochs]
+        tick_font = QFont()
+        tick_font.setPointSize(tick_size)
+        painter.setFont(tick_font)
+
         if self.epochs is not None and self.epochs > 0:
             tick_epochs = list(range(0, int(self.epochs) + 1, 20))
             if int(self.epochs) not in tick_epochs:
@@ -185,34 +242,42 @@ class LossPanel(QWidget):
             tick_epochs = sorted(set(tick_epochs))
             for epoch in tick_epochs:
                 x = left_margin + int(epoch / max(int(self.epochs), 1) * plot_w)
-                painter.drawLine(x, h - bottom_margin, x, h - bottom_margin + 6)
-                painter.drawText(x - 18, h - bottom_margin + 20, 36, 16, Qt.AlignCenter, str(epoch))
+                tick_len = max(4, int(6 * scale))
+                painter.drawLine(x, h - bottom_margin, x, h - bottom_margin + tick_len)
+                text_w = max(28, int(44 * scale))
+                text_h = max(14, int(18 * scale))
+                painter.drawText(x - text_w // 2, h - bottom_margin + tick_len + int(2 * scale), text_w, text_h, Qt.AlignCenter, str(epoch))
         else:
             ticks = 5
             for i in range(ticks + 1):
                 x = left_margin + int(i / ticks * plot_w)
                 epoch = int(i / ticks * (len(train) - 1))
-                painter.drawLine(x, h - bottom_margin, x, h - bottom_margin + 6)
-                painter.drawText(x - 18, h - bottom_margin + 20, 36, 16, Qt.AlignCenter, str(epoch))
+                tick_len = max(4, int(6 * scale))
+                painter.drawLine(x, h - bottom_margin, x, h - bottom_margin + tick_len)
+                text_w = max(28, int(44 * scale))
+                text_h = max(14, int(18 * scale))
+                painter.drawText(x - text_w // 2, h - bottom_margin + tick_len + int(2 * scale), text_w, text_h, Qt.AlignCenter, str(epoch))
 
         ticks = 5
         for i in range(ticks + 1):
             # y轴
             y = top_margin + int(i / ticks * plot_h)
             val_text = max_v - i / ticks * (max_v - min_v)
-            painter.drawLine(left_margin - 6, y, left_margin, y)
-            painter.drawText(12, y - 8, left_margin - 20, 16, Qt.AlignRight | Qt.AlignVCenter, f"{val_text:.2f}")
+            tick_len = max(4, int(6 * scale))
+            painter.drawLine(left_margin - tick_len, y, left_margin, y)
+            text_h = max(14, int(18 * scale))
+            painter.drawText(max(6, int(10 * scale)), y - text_h // 2, left_margin - max(14, int(18 * scale)), text_h, Qt.AlignRight | Qt.AlignVCenter, f"{val_text:.2f}")
 
         # x/y 轴标题
         font.setBold(False)
-        font.setPointSize(11)
+        font.setPointSize(axis_size)
         painter.setFont(font)
         # 轴标题放在刻度文本之外，避免遮挡
-        painter.drawText(left_margin, h - 26, plot_w, 18, Qt.AlignCenter, self.x_title)
+        painter.drawText(left_margin, h - max(22, int(26 * scale)), plot_w, max(16, int(18 * scale)), Qt.AlignCenter, self.x_title)
         painter.save()
-        painter.translate(14, top_margin + plot_h // 2)
+        painter.translate(max(10, int(14 * scale)), top_margin + plot_h // 2)
         painter.rotate(-90)
-        painter.drawText(-plot_h // 2, 0, plot_h, 20, Qt.AlignCenter, self.y_title)
+        painter.drawText(-plot_h // 2, 0, plot_h, max(18, int(20 * scale)), Qt.AlignCenter, self.y_title)
         painter.restore()
 
     def mousePressEvent(self, event):
@@ -231,6 +296,7 @@ class SystemReminderPage(QWidget):
     # Simple home page for system reminder with titles only
     train_requested = pyqtSignal()
     compare_requested = pyqtSignal()
+    metric_requested = pyqtSignal()
     back_requested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -239,7 +305,7 @@ class SystemReminderPage(QWidget):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        self.title_label = QLabel("基于U-Net的地震反演系统", self)
+        self.title_label = QLabel("融合预训练策略的地震反演系统", self)
         self.title_label.setAlignment(Qt.AlignCenter)
         font = self.title_label.font()
         font.setPointSize(20)
@@ -255,8 +321,11 @@ class SystemReminderPage(QWidget):
 
         self.train_btn = BaseButton("训练页面", self, color="#1E90FF", radius=8)
         self.compare_btn = BaseButton("预测对比页面", self, color="#1E90FF", radius=8)
+        self.metric_btn = BaseButton("指标分析", self, color="#1E90FF", radius=8)
 
         bottom_layout.addWidget(self.train_btn)
+        bottom_layout.addStretch(1)
+        bottom_layout.addWidget(self.metric_btn)
         bottom_layout.addStretch(1)
         bottom_layout.addWidget(self.compare_btn)
         layout.addWidget(bottom_widget)
@@ -265,6 +334,7 @@ class SystemReminderPage(QWidget):
         # Signals to host (placeholders for future wiring)
         self.train_btn.clicked.connect(self.train_requested)
         self.compare_btn.clicked.connect(self.compare_requested)
+        self.metric_btn.clicked.connect(self.metric_requested)
 
     def update_content(self, text: str) -> None:
         pass
@@ -330,11 +400,20 @@ class TrainingView(QWidget):
         root = QHBoxLayout(self)
         left_widget = QWidget(self)
         left_layout = QVBoxLayout(left_widget)
+        self.model1_label = QLabel("对比模型1", self)
+        self.model1_label.setAlignment(Qt.AlignCenter)
         self.combo = QComboBox(self)
-        self.combo.addItems(["SEGSalt", "SEGSimulation", "FlatVelA", "CurveFaultA", "FlatFaultA", "CurveVelA"])
+        self.combo.addItems(["Scratch", "Sup-Mig", "Self-Sup"])
+        self.model2_label = QLabel("对比模型2", self)
+        self.model2_label.setAlignment(Qt.AlignCenter)
+        self.compare_model_combo = QComboBox(self)
+        self.compare_model_combo.addItems(["Scratch", "Sup-Mig", "Self-Sup"])
         self.start_btn = BaseButton("显示Loss页面", self, color="#1E90FF", radius=8)
         self.back_btn = BaseButton("返回", self, color="#1E90FF", radius=8)
+        left_layout.addWidget(self.model1_label, alignment=Qt.AlignCenter)
         left_layout.addWidget(self.combo, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.model2_label, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.compare_model_combo, alignment=Qt.AlignCenter)
         left_layout.addWidget(self.start_btn, alignment=Qt.AlignCenter)
         left_layout.addWidget(self.back_btn, alignment=Qt.AlignCenter)
         root.addWidget(left_widget, 1)
@@ -427,54 +506,425 @@ class TrainingView(QWidget):
                 return path
         return None
 
-    def _on_show_loss(self):
-        dataset_name = self.combo.currentText()
-        page_dir = os.path.dirname(__file__)
-        base_dir = os.path.join(page_dir, "resources", "training_data", dataset_name)
-        results_dir = os.path.join(
-            os.path.dirname(page_dir),
-            os.path.dirname(page_dir),
-            "results",
-            f"{dataset_name}Results",
-        )
+    def _method_root_dir(self, method_name):
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        base = os.path.join(project_root, "results", "CurveFaultAResults")
+        mapping = {
+            "Scratch": os.path.join(base, "unused_pretrain", "DDNet70", "CurveFaultA"),
+            "Sup-Mig": os.path.join(base, "used_pretrain", "DDNet70", "CurveFaultA"),
+            "Self-Sup": os.path.join(base, "self_sup", "DDNet70", "CurveFaultA"),
+        }
+        return mapping.get(method_name)
 
-        train_loss_path = self._find_existing_path([
-            os.path.join(base_dir, "train_loss.npy"),
-            os.path.join(base_dir, "train_loss.csv"),
-            os.path.join(base_dir, "train_loss.txt"),
-            os.path.join(base_dir, "train_loss.npz"),
-            os.path.join(results_dir, f"[Loss]{dataset_name}.npy"),
-            os.path.join(results_dir, f"[Loss]{dataset_name}_CLStage1.npy"),
-            os.path.join(results_dir, f"[Loss]{dataset_name}_CLStage2.npy"),
-        ])
-        val_loss_path = self._find_existing_path([
-            os.path.join(base_dir, "val_loss.npy"),
-            os.path.join(base_dir, "val_loss.csv"),
-            os.path.join(base_dir, "val_loss.txt"),
-            os.path.join(base_dir, "val_loss.npz"),
-        ])
-        if not train_loss_path:
-            self.loss_panel.set_error("未找到 Loss 文件")
+    def _find_method_loss_path(self, method_name):
+        root = self._method_root_dir(method_name)
+        if not root or not os.path.isdir(root):
+            return None
+
+        matches = []
+        for cur_root, _, files in os.walk(root):
+            for name in files:
+                lower = name.lower()
+                if lower.endswith(".npy") and "[loss]" in lower and "curvefaulta" in lower:
+                    full = os.path.join(cur_root, name)
+                    matches.append((os.path.getmtime(full), full))
+
+        if not matches:
+            return None
+        matches.sort(key=lambda x: x[0], reverse=True)
+        return matches[0][1]
+
+    def _on_show_loss(self):
+        model1_method = self.combo.currentText()
+        model2_method = self.compare_model_combo.currentText()
+
+        model1_loss_path = self._find_method_loss_path(model1_method)
+        model2_loss_path = self._find_method_loss_path(model2_method)
+        if not model1_loss_path or not model2_loss_path:
+            self.loss_panel.set_error(
+                f"未找到双模型Loss文件: {model1_method}={bool(model1_loss_path)}, {model2_method}={bool(model2_loss_path)}"
+            )
             return
 
         try:
             # 对齐 utils.save_results 的绘制逻辑：默认从 loss[1:] 开始绘制
-            full_loss = self._load_loss_by_path(train_loss_path)
+            full_loss = self._load_loss_by_path(model1_loss_path)
             train_loss = full_loss[1:] if full_loss.size > 1 else full_loss
-            epochs = int(full_loss.size - 1) if full_loss.size > 1 else int(full_loss.size)
 
-            val_loss = self._load_loss_by_path(val_loss_path) if val_loss_path else None
+            val_loss_raw = self._load_loss_by_path(model2_loss_path)
+            val_loss = val_loss_raw[1:] if val_loss_raw.size > 1 else val_loss_raw
+
+            min_len = min(len(train_loss), len(val_loss))
+            if min_len < 2:
+                raise ValueError("对比 Loss 数据长度不足")
+            train_loss = train_loss[:min_len]
+            val_loss = val_loss[:min_len]
+
             self.loss_panel.set_data(
                 train_loss,
                 val_loss,
                 smooth=None,
-                epochs=epochs,
+                epochs=min_len - 1,
                 x_title="Epoch",
                 y_title="Loss",
-                title=f"{dataset_name} Loss",
+                title="CurveFaultA 双模型Loss对比",
+                train_label=model1_method,
+                val_label=model2_method,
             )
         except Exception as e:
             self.loss_panel.set_error(f"数据读取失败: {e}")
+
+
+class MetricAnalysisView(QWidget):
+    back_requested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        self._metric_results_dir = os.path.join(self._project_root, "results", "CurveFaultAResults")
+        self._cache_dir = os.path.join(self._metric_results_dir, "metric_cache")
+        self._snapshot_cache_path = os.path.join(self._cache_dir, "latest_compare_batch_snapshot.json")
+        self._memory_pair_cache = {}
+        self._memory_snapshot = None
+        self._build_ui()
+
+    def _build_ui(self):
+        root = QHBoxLayout(self)
+
+        left_widget = QWidget(self)
+        left_layout = QVBoxLayout(left_widget)
+        self.model1_label = QLabel("对比模型1", self)
+        self.model1_label.setAlignment(Qt.AlignCenter)
+        self.combo = QComboBox(self)
+        self.combo.addItems(["Scratch", "Sup-Mig", "Self-Sup"])
+        self.model2_label = QLabel("对比模型2", self)
+        self.model2_label.setAlignment(Qt.AlignCenter)
+        self.compare_model_combo = QComboBox(self)
+        self.compare_model_combo.addItems(["Scratch", "Sup-Mig", "Self-Sup"])
+        self.start_btn = BaseButton("重新计算并刷新", self, color="#1E90FF", radius=8)
+        self.back_btn = BaseButton("返回", self, color="#1E90FF", radius=8)
+        left_layout.addWidget(self.model1_label, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.combo, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.model2_label, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.compare_model_combo, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.start_btn, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.back_btn, alignment=Qt.AlignCenter)
+        root.addWidget(left_widget, 1)
+
+        right_widget = QWidget(self)
+        right_layout = QVBoxLayout(right_widget)
+        self.result_table = QTableWidget(6, 3, self)
+        self.result_table.setHorizontalHeaderLabels(["指标", "模型1", "模型2"])
+        self.result_table.verticalHeader().setVisible(False)
+        self.result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.result_table.setSelectionMode(QTableWidget.NoSelection)
+
+        metric_names = ["MSE", "MAE", "UQI", "LPIPS", "推理耗时(s)", "样本数"]
+        for i, name in enumerate(metric_names):
+            self.result_table.setItem(i, 0, QTableWidgetItem(name))
+            self.result_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.result_table.setItem(i, 2, QTableWidgetItem("--"))
+
+        self.table_hint = QLabel("请选择模型后点击“显示指标页面”开始运行测试并刷新结果", self)
+        self.table_hint.setAlignment(Qt.AlignCenter)
+        self.table_hint.setStyleSheet("color:#6b7280;")
+        self.run_log = QPlainTextEdit(self)
+        self.run_log.setReadOnly(True)
+        self.run_log.setPlaceholderText("运行日志将在这里显示")
+        self.run_log.setMinimumHeight(180)
+        right_layout.addWidget(self.result_table)
+        right_layout.addWidget(self.table_hint)
+        right_layout.addWidget(self.run_log)
+        root.addWidget(right_widget, 2)
+
+        self.setLayout(root)
+        self.start_btn.clicked.connect(self._on_show_metrics)
+        self.combo.currentTextChanged.connect(self._on_model_selection_changed)
+        self.compare_model_combo.currentTextChanged.connect(self._on_model_selection_changed)
+        self._refresh_table_headers()
+        self._try_render_from_cache(prefer_disk=True)
+        self.back_btn.clicked.connect(self.back_requested.emit)
+
+    def _refresh_table_headers(self):
+        self.result_table.setHorizontalHeaderLabels([
+            "指标",
+            self.combo.currentText(),
+            self.compare_model_combo.currentText(),
+        ])
+
+    def _method_to_alias_candidates(self, method_name):
+        fixed_mapping = {
+            "Scratch": ["Baseline-DDNet70-Scratch"],
+            "Sup-Mig": ["Proposed-DDNet70-PretrainFinetune", "Sup-Mig"],
+            "Self-Sup": ["Self-Sup", "SelfSup", "self_sup"],
+        }
+        return fixed_mapping.get(method_name, [method_name])
+
+    def _pair_cache_key(self, model1_name, model2_name):
+        return f"CurveFaultA|{model1_name}|{model2_name}"
+
+    def _pair_cache_file(self, pair_key):
+        digest = hashlib.md5(pair_key.encode("utf-8")).hexdigest()
+        return os.path.join(self._cache_dir, f"pair_{digest}.json")
+
+    def _csv_fingerprint(self, csv_path):
+        stat = os.stat(csv_path)
+        return {
+            "name": os.path.basename(csv_path),
+            "path": csv_path,
+            "size": int(stat.st_size),
+            "mtime": float(stat.st_mtime),
+        }
+
+    def _now_text(self):
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def _ensure_cache_dir(self):
+        os.makedirs(self._cache_dir, exist_ok=True)
+
+    def _build_snapshot_payload(self, rows, csv_path):
+        rows_by_alias = {}
+        for row in rows:
+            alias = str(row.get("alias", "")).strip()
+            if not alias:
+                continue
+            rows_by_alias[alias] = row
+        return {
+            "dataset": "CurveFaultA",
+            "csv": self._csv_fingerprint(csv_path),
+            "refreshed_at": self._now_text(),
+            "rows_by_alias": rows_by_alias,
+        }
+
+    def _save_snapshot_cache(self, snapshot):
+        self._ensure_cache_dir()
+        with open(self._snapshot_cache_path, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, ensure_ascii=False, indent=2)
+
+    def _load_snapshot_cache_from_disk(self):
+        if not os.path.exists(self._snapshot_cache_path):
+            return None
+        with open(self._snapshot_cache_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return payload if isinstance(payload, dict) else None
+
+    def _build_pair_entry(self, snapshot, model1_name, model2_name):
+        rows = list(snapshot.get("rows_by_alias", {}).values())
+        model1_row = self._pick_row_for_method(rows, model1_name)
+        model2_row = self._pick_row_for_method(rows, model2_name)
+        if model1_row is None or model2_row is None:
+            raise ValueError(
+                f"缓存中未找到所选模型结果: {model1_name}={bool(model1_row)}, {model2_name}={bool(model2_row)}"
+            )
+
+        return {
+            "pair_key": self._pair_cache_key(model1_name, model2_name),
+            "dataset": "CurveFaultA",
+            "model1": model1_name,
+            "model2": model2_name,
+            "csv": snapshot.get("csv", {}),
+            "refreshed_at": snapshot.get("refreshed_at", ""),
+            "metrics": {
+                "mse": [self._format_metric(model1_row, "mse_mean"), self._format_metric(model2_row, "mse_mean")],
+                "mae": [self._format_metric(model1_row, "mae_mean"), self._format_metric(model2_row, "mae_mean")],
+                "uqi": [self._format_metric(model1_row, "uqi_mean"), self._format_metric(model2_row, "uqi_mean")],
+                "lpips": [self._format_metric(model1_row, "lpips_mean"), self._format_metric(model2_row, "lpips_mean")],
+                "time": [self._format_metric(model1_row, "per_sample_seconds"), self._format_metric(model2_row, "per_sample_seconds")],
+                "sample_count": [self._format_metric(model1_row, "sample_count"), self._format_metric(model2_row, "sample_count")],
+            },
+        }
+
+    def _save_pair_cache(self, entry):
+        pair_key = entry.get("pair_key")
+        if not pair_key:
+            return
+        self._ensure_cache_dir()
+        path = self._pair_cache_file(pair_key)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(entry, f, ensure_ascii=False, indent=2)
+
+    def _load_pair_cache_from_disk(self, pair_key):
+        path = self._pair_cache_file(pair_key)
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return payload if isinstance(payload, dict) else None
+
+    def _apply_pair_entry_to_table(self, entry, source_tag):
+        metrics = entry.get("metrics", {})
+        self._set_metric_row(0, *metrics.get("mse", ["--", "--"]))
+        self._set_metric_row(1, *metrics.get("mae", ["--", "--"]))
+        self._set_metric_row(2, *metrics.get("uqi", ["--", "--"]))
+        self._set_metric_row(3, *metrics.get("lpips", ["--", "--"]))
+        self._set_metric_row(4, *metrics.get("time", ["--", "--"]))
+        self._set_metric_row(5, *metrics.get("sample_count", ["--", "--"]))
+
+        csv_meta = entry.get("csv", {})
+        csv_name = csv_meta.get("name") or "未知CSV"
+        refreshed_at = entry.get("refreshed_at", "未知时间")
+        self.table_hint.setText(f"来源: {source_tag} | 数据: {csv_name} | 刷新: {refreshed_at}")
+
+    def _on_model_selection_changed(self):
+        self._refresh_table_headers()
+        self._try_render_from_cache(prefer_disk=True)
+
+    def _try_render_from_cache(self, prefer_disk=False):
+        model1_name = self.combo.currentText()
+        model2_name = self.compare_model_combo.currentText()
+        pair_key = self._pair_cache_key(model1_name, model2_name)
+
+        cached = self._memory_pair_cache.get(pair_key)
+        if cached:
+            self._apply_pair_entry_to_table(cached, source_tag="内存缓存(L1)")
+            return True
+
+        if prefer_disk:
+            pair_disk = self._load_pair_cache_from_disk(pair_key)
+            if pair_disk:
+                self._memory_pair_cache[pair_key] = pair_disk
+                self._apply_pair_entry_to_table(pair_disk, source_tag="磁盘缓存(L2)")
+                return True
+
+        snapshot = self._memory_snapshot
+        if snapshot is None and prefer_disk:
+            snapshot = self._load_snapshot_cache_from_disk()
+            if snapshot:
+                self._memory_snapshot = snapshot
+
+        if snapshot:
+            try:
+                entry = self._build_pair_entry(snapshot, model1_name, model2_name)
+                self._memory_pair_cache[pair_key] = entry
+                self._save_pair_cache(entry)
+                self._apply_pair_entry_to_table(entry, source_tag="快照缓存")
+                return True
+            except Exception:
+                pass
+
+        self.table_hint.setText("当前组合暂无缓存，请点击“重新计算并刷新”")
+        return False
+
+    def _run_model_test(self):
+        script_path = os.path.join(self._project_root, "model_test.py")
+        if not os.path.exists(script_path):
+            raise FileNotFoundError(f"未找到测试脚本: {script_path}")
+
+        env = os.environ.copy()
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        proc = subprocess.Popen(
+            [sys.executable, script_path],
+            cwd=self._project_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            bufsize=1,
+        )
+        log_tail = []
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                line = line.rstrip("\r\n")
+                if line:
+                    self._append_run_log(line)
+                    log_tail.append(line)
+                    if len(log_tail) > 12:
+                        log_tail.pop(0)
+        proc.wait()
+        if proc.returncode != 0:
+            msg = "\n".join(log_tail[-8:]) if log_tail else "未知错误"
+            raise RuntimeError(f"model_test.py 运行失败 (code={proc.returncode})\n{msg}")
+
+    def _append_run_log(self, text):
+        if not text:
+            return
+        self.run_log.appendPlainText(text)
+        bar = self.run_log.verticalScrollBar()
+        bar.setValue(bar.maximum())
+        QApplication.processEvents()
+
+    def _find_latest_compare_batch_csv(self):
+        pattern = os.path.join(self._metric_results_dir, "[[]CompareBatch[]]CurveFaultA_*.csv")
+        candidates = glob.glob(pattern)
+        if not candidates:
+            return None
+        candidates.sort(key=os.path.getmtime, reverse=True)
+        return candidates[0]
+
+    def _pick_row_for_method(self, rows, method_name):
+        candidates = self._method_to_alias_candidates(method_name)
+        rows_ok = [r for r in rows if str(r.get("status", "")).lower() == "ok"]
+        search_rows = rows_ok if rows_ok else rows
+
+        for alias in candidates:
+            for row in search_rows:
+                if row.get("alias") == alias:
+                    return row
+
+        tokens = [t.lower() for t in method_name.replace("-", " ").split() if t]
+        for row in search_rows:
+            alias = str(row.get("alias", "")).lower()
+            if tokens and all(t in alias for t in tokens):
+                return row
+        return None
+
+    def _set_metric_row(self, row_index, model1_val, model2_val):
+        self.result_table.setItem(row_index, 1, QTableWidgetItem(model1_val))
+        self.result_table.setItem(row_index, 2, QTableWidgetItem(model2_val))
+
+    def _format_metric(self, row, key):
+        if row is None:
+            return "--"
+        value = row.get(key, "")
+        if value in (None, ""):
+            return "--"
+        try:
+            return f"{float(value):.6f}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    def _on_show_metrics(self):
+        self._refresh_table_headers()
+        self.table_hint.setText("正在运行 model_test.py 并刷新指标，请稍候...")
+        self.run_log.clear()
+        self._append_run_log(f"$ {sys.executable} model_test.py")
+        self.start_btn.setEnabled(False)
+
+        try:
+            self._run_model_test()
+            csv_path = self._find_latest_compare_batch_csv()
+            if not csv_path:
+                raise FileNotFoundError("未找到 [CompareBatch]CurveFaultA_*.csv 输出文件")
+
+            with open(csv_path, "r", encoding="utf-8", newline="") as f:
+                rows = list(csv.DictReader(f))
+            if not rows:
+                raise ValueError("对比结果文件为空")
+
+            snapshot = self._build_snapshot_payload(rows, csv_path)
+            self._memory_snapshot = snapshot
+            self._save_snapshot_cache(snapshot)
+
+            model1_name = self.combo.currentText()
+            model2_name = self.compare_model_combo.currentText()
+            pair_entry = self._build_pair_entry(snapshot, model1_name, model2_name)
+            pair_key = pair_entry["pair_key"]
+            self._memory_pair_cache[pair_key] = pair_entry
+            self._save_pair_cache(pair_entry)
+            self._apply_pair_entry_to_table(pair_entry, source_tag="实时计算")
+
+            self._append_run_log("model_test.py 运行完成")
+        except Exception as e:
+            self._append_run_log(f"ERROR: {e}")
+            self.table_hint.setText(f"指标刷新失败: {e}")
+        finally:
+            self.start_btn.setEnabled(True)
+
+    def refresh_metrics(self):
+        self._on_show_metrics()
 
 
 class CompareView(QWidget):

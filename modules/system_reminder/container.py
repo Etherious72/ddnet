@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QStackedWidget
-from .page import TrainingView, CompareView
+from .page import TrainingView, CompareView, MetricAnalysisView
 from PyQt5.QtCore import pyqtSignal
 from .page import SystemReminderPage
 
@@ -16,6 +16,7 @@ class SystemReminderContainer(QWidget):
     # Placeholder signals to propagate button actions to host (future wiring)
     train_requested = pyqtSignal()
     compare_requested = pyqtSignal()
+    metric_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -23,18 +24,22 @@ class SystemReminderContainer(QWidget):
         self._page = SystemReminderPage(self)
         self._training_view = TrainingView(self)
         self._compare_view = CompareView(self)
+        self._metric_view = MetricAnalysisView(self)
         self.stack = QStackedWidget(self)
         self.stack.addWidget(self._page)
         self.stack.addWidget(self._training_view)
         self.stack.addWidget(self._compare_view)
+        self.stack.addWidget(self._metric_view)
         layout = QVBoxLayout(self)
         layout.addWidget(self.stack)
         self.setLayout(layout)
         # Internal navigation wiring
         self._page.train_requested.connect(self._show_train)
         self._page.compare_requested.connect(self._show_compare)
+        self._page.metric_requested.connect(self._show_metric)
         self._training_view.back_requested.connect(self._show_home)
         self._compare_view.back_requested.connect(self._show_home)
+        self._metric_view.back_requested.connect(self._show_home)
 
     def _show_home(self):
         self.stack.setCurrentWidget(self._page)
@@ -74,3 +79,7 @@ class SystemReminderContainer(QWidget):
     def _show_compare(self):
         self.stack.setCurrentWidget(self._compare_view)
         self.compare_requested.emit()
+
+    def _show_metric(self):
+        self.stack.setCurrentWidget(self._metric_view)
+        self.metric_requested.emit()

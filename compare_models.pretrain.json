@@ -10,12 +10,17 @@
     {
       "alias": "Baseline-DDNet70-Scratch",
       "model_type": "DDNet70",
-      "model_path": "models/CurveFaultAModel/CurveFaultA_CLStage3_TrSize3_AllEpo5_CurEpo4.pkl"
+      "model_path": "results/CurveFaultAResults/unused_pretrain/DDNet70/CurveFaultA/CurveFaultA_CLStage3_unused_pretrain_TrSize3_AllEpo5_CurEpo4.pkl"
     },
     {
       "alias": "Proposed-DDNet70-PretrainFinetune",
       "model_type": "DDNet70",
-      "model_path": "models/CurveFaultAModel/CurveFaultA_CLStage3_TrSize3_AllEpo5_CurEpo4.pkl"
+      "model_path": "results/CurveFaultAResults/used_pretrain/DDNet70/CurveFaultA/CurveFaultA_CLStage3_used_pretrain_TrSize3_AllEpo5_CurEpo4.pkl"
+    },
+    {
+      "alias": "self-sup",
+      "model_type": "DDNet70",
+      "model_path": "results/CurveFaultAResults/self_sup/DDNet70/CurveFaultA/CurveFaultA_CLStage3_unused_pretrain_TrSize3_AllEpo5_CurEpo4.pkl"
     }
   ]
 }

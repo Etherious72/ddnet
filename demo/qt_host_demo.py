@@ -31,7 +31,7 @@ def main():
     # Provide some context (future use)
     container.set_context({"host": "demo", "theme": "light"})
     # Initial content
-    container.update_content("基于U-Net的地震反演系统")
+    container.update_content("融合预训练策略的地震反演系统")
 
     window.resize(1000, 800)
     window.show()

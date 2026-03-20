@@ -19,10 +19,6 @@ from math import ceil
 import os
 import json
 
-# Current run identifier for this training session (one ID per full training using implicit mode)
-CURRENT_TRAIN_RUN_ID = None
-
-
 def _training_mode_dir():
     '''
     Determine training mode directory based on load_pretrained presence (implicit mode).
@@ -192,12 +188,9 @@ def train_for_one_stage(cur_epochs, model, training_loader, optimizer, save_time
     :return:                模型保存路径
     '''
 
-    # Determine output directory for this run (implicit mode: used_pretrain/unused_pretrain)
-    global CURRENT_TRAIN_RUN_ID
+    # Determine output directory (implicit mode: used_pretrain/unused_pretrain)
     mode_dir = _training_mode_dir()
-    if CURRENT_TRAIN_RUN_ID is None:
-        CURRENT_TRAIN_RUN_ID = time.strftime("%Y%m%d_%H%M%S")
-    per_run_root = os.path.join(results_dir, mode_dir, model_type, dataset_name, CURRENT_TRAIN_RUN_ID)
+    per_run_root = os.path.join(results_dir, mode_dir, model_type, dataset_name)
     os.makedirs(per_run_root, exist_ok=True)
 
     loss_of_stage = []
@@ -302,20 +295,16 @@ def curriculum_learning_training(model_type, init_model_src="", finetune_lr_scal
                                     可用模型关键字为
                                     [DDNet70 | DDNet | InversionNet | FCNVMB| SDNet70 | SDNet]
     '''
-    # Initialize training run metadata (implicit mode based on load_pretrained)
-    global CURRENT_TRAIN_RUN_ID
+    # Initialize training metadata (implicit mode based on load_pretrained)
     mode_dir = _training_mode_dir()
-    if CURRENT_TRAIN_RUN_ID is None:
-        CURRENT_TRAIN_RUN_ID = time.strftime("%Y%m%d_%H%M%S")
-    print("[Train] mode_dir={}, run_id={}".format(mode_dir, CURRENT_TRAIN_RUN_ID))
+    print("[Train] mode_dir={}".format(mode_dir))
 
     # Write a simple run metadata file for traceability (implicit mode)
-    run_base_root = os.path.join(results_dir, mode_dir, model_type, dataset_name, CURRENT_TRAIN_RUN_ID)
+    run_base_root = os.path.join(results_dir, mode_dir, model_type, dataset_name)
     os.makedirs(run_base_root, exist_ok=True)
     run_meta_path = os.path.join(run_base_root, "run_meta.json")
     run_meta = {
         "mode_dir": mode_dir,
-        "run_id": CURRENT_TRAIN_RUN_ID,
         "model_type": model_type,
         "load_pretrained": TRAIN_MANUAL_CONFIG.get("load_pretrained", ""),
         "finetune_lr_scale": finetune_lr_scale,
@@ -423,7 +412,7 @@ def curriculum_learning_training(model_type, init_model_src="", finetune_lr_scal
 # 训练手动参数（不通过命令行传入）
 TRAIN_MANUAL_CONFIG = {
     "model_type": model_type,
-    "load_pretrained": "models_pretrain/CurveFaultAModel/DDNet70_SrcMix2_TgtCurveFaultA_PreEpo2_20260309_232035.pkl",
+    "load_pretrained": "",
     "finetune_lr_scale": 0.1,
 }
 

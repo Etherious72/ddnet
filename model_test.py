@@ -240,19 +240,6 @@ def _save_batch_metrics(model_path, model_type, mse, mae, uqi, lpips_score, elap
     tag = _model_tag(model_path)
     save_prefix = "[Metric]{}_{}_{}".format(dataset_name, model_type, tag)
 
-    np.savez(
-        os.path.join(results_dir, save_prefix + ".npz"),
-        mse=mse,
-        mae=mae,
-        uqi=uqi,
-        lpips=lpips_score,
-        mse_mean=np.mean(mse),
-        mae_mean=np.mean(mae),
-        uqi_mean=np.mean(uqi),
-        lpips_mean=np.mean(lpips_score),
-        elapsed_seconds=elapsed_seconds,
-    )
-
     with open(os.path.join(results_dir, save_prefix + "_summary.txt"), "w", encoding="utf-8") as f:
         f.write("dataset: {}\n".format(dataset_name))
         f.write("model_type: {}\n".format(model_type))
@@ -263,49 +250,12 @@ def _save_batch_metrics(model_path, model_type, mse, mae, uqi, lpips_score, elap
         f.write("uqi_mean: {:.8f}\n".format(np.mean(uqi)))
         f.write("lpips_mean: {:.8f}\n".format(np.mean(lpips_score)))
         f.write("elapsed_seconds: {:.6f}\n".format(elapsed_seconds))
-
-    csv_path = os.path.join(results_dir, save_prefix + ".csv")
-    sample_ids = np.arange(len(mse), dtype=int)
-    csv_data = np.column_stack((sample_ids, mse, mae, uqi, lpips_score))
-    np.savetxt(
-        csv_path,
-        csv_data,
-        delimiter=",",
-        header="sample_id,mse,mae,uqi,lpips",
-        comments="",
-        fmt=["%d", "%.8f", "%.8f", "%.8f", "%.8f"],
-    )
-
-    summary_csv_path = os.path.join(results_dir, save_prefix + "_summary.csv")
-    summary_data = np.array([[np.mean(mse), np.mean(mae), np.mean(uqi), np.mean(lpips_score), elapsed_seconds]], dtype=float)
-    np.savetxt(
-        summary_csv_path,
-        summary_data,
-        delimiter=",",
-        header="mse_mean,mae_mean,uqi_mean,lpips_mean,elapsed_seconds",
-        comments="",
-        fmt="%.8f",
-    )
-
-    print("Metrics saved: {}".format(os.path.join(results_dir, save_prefix + ".npz")))
     print("Summary saved: {}".format(os.path.join(results_dir, save_prefix + "_summary.txt")))
-    print("Metrics csv saved: {}".format(csv_path))
-    print("Summary csv saved: {}".format(summary_csv_path))
 
 
 def _save_single_metrics(model_path, model_type, select_id, mse, mae, uqi, lpips_score, elapsed_seconds):
     tag = _model_tag(model_path)
     save_prefix = "[SingleMetric]{}_{}_{}".format(dataset_name, model_type, tag)
-
-    np.savez(
-        os.path.join(results_dir, save_prefix + ".npz"),
-        select_id=np.array(select_id, dtype=object),
-        mse=np.array([mse], dtype=float),
-        mae=np.array([mae], dtype=float),
-        uqi=np.array([uqi], dtype=float),
-        lpips=np.array([lpips_score], dtype=float),
-        elapsed_seconds=np.array([elapsed_seconds], dtype=float),
-    )
 
     with open(os.path.join(results_dir, save_prefix + "_summary.txt"), "w", encoding="utf-8") as f:
         f.write("dataset: {}\n".format(dataset_name))
@@ -317,21 +267,7 @@ def _save_single_metrics(model_path, model_type, select_id, mse, mae, uqi, lpips
         f.write("uqi: {:.8f}\n".format(uqi))
         f.write("lpips: {:.8f}\n".format(lpips_score))
         f.write("elapsed_seconds: {:.6f}\n".format(elapsed_seconds))
-
-    csv_path = os.path.join(results_dir, save_prefix + ".csv")
-    single_data = np.array([[mse, mae, uqi, lpips_score, elapsed_seconds]], dtype=float)
-    np.savetxt(
-        csv_path,
-        single_data,
-        delimiter=",",
-        header="mse,mae,uqi,lpips,elapsed_seconds",
-        comments="",
-        fmt="%.8f",
-    )
-
-    print("Single-sample metrics saved: {}".format(os.path.join(results_dir, save_prefix + ".npz")))
     print("Single-sample summary saved: {}".format(os.path.join(results_dir, save_prefix + "_summary.txt")))
-    print("Single-sample csv saved: {}".format(csv_path))
 
 
 def load_dataset():
@@ -478,6 +414,7 @@ def batch_test(model_path, model_type = "DDNet"):
         "elapsed_seconds": float(time_elapsed),
         "per_sample_seconds": per_sample_seconds,
     }
+
 
 def single_test(model_path, select_id, train_or_test = "test", model_type = "DDNet", save_preview = 1, show_preview = 1):
     '''
