@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QPlainTextEdit,
     QApplication,
+    QMessageBox,
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QPainter, QPen, QColor, QFontMetrics
@@ -23,10 +24,50 @@ import json
 import subprocess
 import sys
 import hashlib
+import shutil
 from datetime import datetime
 import numpy as np
+import torch
 from func.datasets_reader import single_read_matfile, single_read_npyfile
+from model_train import determine_network
+from param_config import dataset_name as DEFAULT_DATASET_NAME
 from .base_button import BaseButton
+
+
+PANEL_STYLE = (
+    "QWidget {"
+    "background:#ffffff;"
+    "border:1px solid #d9e1ec;"
+    "border-radius:12px;"
+    "}"
+)
+
+COMBO_STYLE = (
+    "QComboBox {"
+    "background:#f8fbff;"
+    "border:1px solid #bfd1e3;"
+    "border-radius:8px;"
+    "padding:4px 8px;"
+    "min-height:28px;"
+    "font-size:14px;"
+    "color:#223142;"
+    "}"
+    "QComboBox:hover {border:1px solid #8aaed1;}"
+    "QComboBox:focus {border:1px solid #2c7fb8;}"
+    "QComboBox::drop-down {border:none; width:24px;}"
+    "QComboBox QAbstractItemView {"
+    "border:1px solid #bfd1e3;"
+    "font-size:14px;"
+    "selection-background-color:#dbeeff;"
+    "selection-color:#1f2d3d;"
+    "}"
+)
+
+
+def _apply_combo_style(combo):
+    combo.setStyleSheet(COMBO_STYLE)
+    combo.setMinimumWidth(150)
+    combo.setMaximumWidth(175)
 
 
 class LossPanel(QWidget):
@@ -36,6 +77,7 @@ class LossPanel(QWidget):
         super().__init__(parent)
         self.train_loss = []
         self.val_loss = None
+        self.third_loss = None
         self.smooth_window = None
         self.epochs = None
         self.x_title = "Epoch"
@@ -43,14 +85,16 @@ class LossPanel(QWidget):
         self.title = "Training Loss"
         self.train_label = "Train"
         self.val_label = "Val"
+        self.third_label = "Model3"
         self.error_text = ""
 
     # ===== 外部调用接口 =====
-    def set_data(self, train_loss, val_loss=None, smooth=None, epochs=None,
+    def set_data(self, train_loss, val_loss=None, third_loss=None, smooth=None, epochs=None,
                  x_title="Epoch", y_title="Loss", title="Training Loss",
-                 train_label="Train", val_label="Val"):
+                 train_label="Train", val_label="Val", third_label="Model3"):
         self.train_loss = np.array(train_loss)
         self.val_loss = np.array(val_loss) if val_loss is not None else None
+        self.third_loss = np.array(third_loss) if third_loss is not None else None
         self.smooth_window = smooth
         self.epochs = epochs
         self.x_title = x_title
@@ -58,12 +102,14 @@ class LossPanel(QWidget):
         self.title = title
         self.train_label = train_label
         self.val_label = val_label
+        self.third_label = third_label
         self.error_text = ""
         self.update()
 
     def set_error(self, text):
         self.train_loss = []
         self.val_loss = None
+        self.third_loss = None
         self.error_text = text
         self.update()
 
@@ -121,6 +167,12 @@ class LossPanel(QWidget):
         else:
             val = None
 
+        if self.third_loss is not None:
+            third = self.smooth(self.third_loss, self.smooth_window)
+            data_all = np.concatenate([data_all, third])
+        else:
+            third = None
+
         min_v = float(np.min(data_all))
         max_v = float(np.max(data_all))
         eps = 1e-8
@@ -176,11 +228,18 @@ class LossPanel(QWidget):
                 painter.drawEllipse(points[i][0] - dot // 2, points[i][1] - dot // 2, dot, dot)
 
         # ===== 画 train =====
-        draw_curve(train, QColor(30, 144, 255))  # 蓝色
+        train_color = QColor(0, 114, 178)      # 深蓝
+        val_color = QColor(230, 159, 0)        # 橙色
+        third_color = QColor(204, 121, 167)    # 洋红
+        draw_curve(train, train_color)
 
         # ===== 画 val =====
         if val is not None:
-            draw_curve(val, QColor(220, 20, 60))  # 红色
+            draw_curve(val, val_color)
+
+        # ===== 画 third =====
+        if third is not None:
+            draw_curve(third, third_color)
 
         # ===== 标题 =====
         painter.setPen(QColor(35, 35, 35))
@@ -203,9 +262,11 @@ class LossPanel(QWidget):
         line_len = max(12, int(20 * scale))
         text_gap = max(6, int(8 * scale))
         item_gap = max(10, int(14 * scale))
-        legend_items = [(QColor(30, 144, 255), self.train_label)]
+        legend_items = [(train_color, self.train_label)]
         if val is not None:
-            legend_items.append((QColor(220, 20, 60), self.val_label))
+            legend_items.append((val_color, self.val_label))
+        if third is not None:
+            legend_items.append((third_color, self.third_label))
 
         total_w = 0
         for _, label in legend_items:
@@ -305,23 +366,27 @@ class SystemReminderPage(QWidget):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 18, 22, 18)
+        layout.setSpacing(16)
+        self.setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f5f9ff, stop:1 #eef4fb);")
         self.title_label = QLabel("融合预训练策略的地震反演系统", self)
         self.title_label.setAlignment(Qt.AlignCenter)
         font = self.title_label.font()
-        font.setPointSize(20)
+        font.setPointSize(22)
         font.setBold(True)
         self.title_label.setFont(font)
-        self.title_label.setStyleSheet("color: red;")
+        self.title_label.setStyleSheet("color:#0f3352; letter-spacing:1px;")
         layout.addWidget(self.title_label)
 
         bottom_widget = QWidget(self)
+        bottom_widget.setStyleSheet("background:#ffffff; border:1px solid #d7e1ec; border-radius:14px;")
         bottom_layout = QHBoxLayout(bottom_widget)
-        bottom_layout.setContentsMargins(40, 0, 40, 28)
-        bottom_layout.setSpacing(20)
+        bottom_layout.setContentsMargins(28, 20, 28, 20)
+        bottom_layout.setSpacing(18)
 
-        self.train_btn = BaseButton("训练页面", self, color="#1E90FF", radius=8)
-        self.compare_btn = BaseButton("预测对比页面", self, color="#1E90FF", radius=8)
-        self.metric_btn = BaseButton("指标分析", self, color="#1E90FF", radius=8)
+        self.train_btn = BaseButton("loss曲线", self, color="#2c7fb8", radius=10)
+        self.compare_btn = BaseButton("速度模型对比", self, color="#1f9d8a", radius=10)
+        self.metric_btn = BaseButton("指标对比", self, color="#d9822b", radius=10)
 
         bottom_layout.addWidget(self.train_btn)
         bottom_layout.addStretch(1)
@@ -398,8 +463,13 @@ class TrainingView(QWidget):
 
     def _build_ui(self):
         root = QHBoxLayout(self)
+        root.setContentsMargins(16, 12, 16, 12)
+        root.setSpacing(14)
         left_widget = QWidget(self)
+        left_widget.setStyleSheet(PANEL_STYLE)
         left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(18, 16, 18, 16)
+        left_layout.setSpacing(10)
         self.model1_label = QLabel("对比模型1", self)
         self.model1_label.setAlignment(Qt.AlignCenter)
         self.combo = QComboBox(self)
@@ -408,24 +478,48 @@ class TrainingView(QWidget):
         self.model2_label.setAlignment(Qt.AlignCenter)
         self.compare_model_combo = QComboBox(self)
         self.compare_model_combo.addItems(["Scratch", "Sup-Mig", "Self-Sup"])
-        self.start_btn = BaseButton("显示Loss页面", self, color="#1E90FF", radius=8)
-        self.back_btn = BaseButton("返回", self, color="#1E90FF", radius=8)
-        left_layout.addWidget(self.model1_label, alignment=Qt.AlignCenter)
-        left_layout.addWidget(self.combo, alignment=Qt.AlignCenter)
-        left_layout.addWidget(self.model2_label, alignment=Qt.AlignCenter)
-        left_layout.addWidget(self.compare_model_combo, alignment=Qt.AlignCenter)
+        self.model3_label = QLabel("对比模型3", self)
+        self.model3_label.setAlignment(Qt.AlignCenter)
+        self.compare_model_combo_2 = QComboBox(self)
+        self.compare_model_combo_2.addItems(["Scratch", "Sup-Mig", "Self-Sup"])
+        _apply_combo_style(self.combo)
+        _apply_combo_style(self.compare_model_combo)
+        _apply_combo_style(self.compare_model_combo_2)
+        self.model1_label.setStyleSheet("color:#1a3550; font-size:13px; font-weight:600;")
+        self.model2_label.setStyleSheet("color:#1a3550; font-size:13px; font-weight:600;")
+        self.model3_label.setStyleSheet("color:#1a3550; font-size:13px; font-weight:600;")
+        self.start_btn = BaseButton("显示Loss页面", self, color="#2c7fb8", radius=10)
+        self.back_btn = BaseButton("返回", self, color="#60798f", radius=10)
+
+        selector_widget = QWidget(self)
+        selector_layout = QGridLayout(selector_widget)
+        selector_layout.setContentsMargins(6, 4, 6, 4)
+        selector_layout.setHorizontalSpacing(8)
+        selector_layout.setVerticalSpacing(6)
+        selector_layout.addWidget(self.model1_label, 0, 0)
+        selector_layout.addWidget(self.combo, 0, 1)
+        selector_layout.addWidget(self.model2_label, 1, 0)
+        selector_layout.addWidget(self.compare_model_combo, 1, 1)
+        selector_layout.addWidget(self.model3_label, 2, 0)
+        selector_layout.addWidget(self.compare_model_combo_2, 2, 1)
+
+        left_layout.addWidget(selector_widget, alignment=Qt.AlignCenter)
         left_layout.addWidget(self.start_btn, alignment=Qt.AlignCenter)
         left_layout.addWidget(self.back_btn, alignment=Qt.AlignCenter)
         root.addWidget(left_widget, 1)
 
         right_widget = QWidget(self)
+        right_widget.setStyleSheet(PANEL_STYLE)
         right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(12, 12, 12, 12)
         self.loss_panel = LossPanel(self)
+        self.loss_panel.setStyleSheet("background:#f8fbff; border:1px solid #dbe5f0; border-radius:10px;")
         right_layout.addWidget(self.loss_panel)
         root.addWidget(right_widget, 2)
         self.setLayout(root)
         self.start_btn.clicked.connect(self._on_show_loss)
         self.loss_panel.clicked.connect(self._show_loss_zoom)
+        self.compare_model_combo_2.currentTextChanged.connect(lambda _: self.loss_panel.update())
         self.back_btn.clicked.connect(self.back_requested.emit)
 
     def _show_loss_zoom(self):
@@ -537,12 +631,14 @@ class TrainingView(QWidget):
     def _on_show_loss(self):
         model1_method = self.combo.currentText()
         model2_method = self.compare_model_combo.currentText()
+        model3_method = self.compare_model_combo_2.currentText()
 
         model1_loss_path = self._find_method_loss_path(model1_method)
         model2_loss_path = self._find_method_loss_path(model2_method)
-        if not model1_loss_path or not model2_loss_path:
+        model3_loss_path = self._find_method_loss_path(model3_method)
+        if not model1_loss_path or not model2_loss_path or not model3_loss_path:
             self.loss_panel.set_error(
-                f"未找到双模型Loss文件: {model1_method}={bool(model1_loss_path)}, {model2_method}={bool(model2_loss_path)}"
+                f"未找到三模型Loss文件: {model1_method}={bool(model1_loss_path)}, {model2_method}={bool(model2_loss_path)}, {model3_method}={bool(model3_loss_path)}"
             )
             return
 
@@ -554,22 +650,28 @@ class TrainingView(QWidget):
             val_loss_raw = self._load_loss_by_path(model2_loss_path)
             val_loss = val_loss_raw[1:] if val_loss_raw.size > 1 else val_loss_raw
 
-            min_len = min(len(train_loss), len(val_loss))
+            third_loss_raw = self._load_loss_by_path(model3_loss_path)
+            third_loss = third_loss_raw[1:] if third_loss_raw.size > 1 else third_loss_raw
+
+            min_len = min(len(train_loss), len(val_loss), len(third_loss))
             if min_len < 2:
                 raise ValueError("对比 Loss 数据长度不足")
             train_loss = train_loss[:min_len]
             val_loss = val_loss[:min_len]
+            third_loss = third_loss[:min_len]
 
             self.loss_panel.set_data(
                 train_loss,
                 val_loss,
+                third_loss,
                 smooth=None,
                 epochs=min_len - 1,
                 x_title="Epoch",
                 y_title="Loss",
-                title="CurveFaultA 双模型Loss对比",
+                title="CurveFaultA 三模型Loss对比",
                 train_label=model1_method,
                 val_label=model2_method,
+                third_label=model3_method,
             )
         except Exception as e:
             self.loss_panel.set_error(f"数据读取失败: {e}")
@@ -590,9 +692,14 @@ class MetricAnalysisView(QWidget):
 
     def _build_ui(self):
         root = QHBoxLayout(self)
+        root.setContentsMargins(16, 12, 16, 12)
+        root.setSpacing(14)
 
         left_widget = QWidget(self)
+        left_widget.setStyleSheet(PANEL_STYLE)
         left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(18, 16, 18, 16)
+        left_layout.setSpacing(10)
         self.model1_label = QLabel("对比模型1", self)
         self.model1_label.setAlignment(Qt.AlignCenter)
         self.combo = QComboBox(self)
@@ -601,38 +708,95 @@ class MetricAnalysisView(QWidget):
         self.model2_label.setAlignment(Qt.AlignCenter)
         self.compare_model_combo = QComboBox(self)
         self.compare_model_combo.addItems(["Scratch", "Sup-Mig", "Self-Sup"])
-        self.start_btn = BaseButton("重新计算并刷新", self, color="#1E90FF", radius=8)
-        self.back_btn = BaseButton("返回", self, color="#1E90FF", radius=8)
-        left_layout.addWidget(self.model1_label, alignment=Qt.AlignCenter)
-        left_layout.addWidget(self.combo, alignment=Qt.AlignCenter)
-        left_layout.addWidget(self.model2_label, alignment=Qt.AlignCenter)
-        left_layout.addWidget(self.compare_model_combo, alignment=Qt.AlignCenter)
+        self.model3_label = QLabel("对比模型3", self)
+        self.model3_label.setAlignment(Qt.AlignCenter)
+        self.compare_model_combo_2 = QComboBox(self)
+        self.compare_model_combo_2.addItems(["Scratch", "Sup-Mig", "Self-Sup"])
+        _apply_combo_style(self.combo)
+        _apply_combo_style(self.compare_model_combo)
+        _apply_combo_style(self.compare_model_combo_2)
+        self.model1_label.setStyleSheet("color:#1a3550; font-size:13px; font-weight:600;")
+        self.model2_label.setStyleSheet("color:#1a3550; font-size:13px; font-weight:600;")
+        self.model3_label.setStyleSheet("color:#1a3550; font-size:13px; font-weight:600;")
+        self.start_btn = BaseButton("重新计算并刷新", self, color="#1f9d8a", radius=10)
+        self.open_btn = BaseButton("打开已有文件", self, color="#2c7fb8", radius=10)
+        self.back_btn = BaseButton("返回", self, color="#60798f", radius=10)
+
+        selector_widget = QWidget(self)
+        selector_layout = QGridLayout(selector_widget)
+        selector_layout.setContentsMargins(6, 4, 6, 4)
+        selector_layout.setHorizontalSpacing(8)
+        selector_layout.setVerticalSpacing(6)
+        selector_layout.addWidget(self.model1_label, 0, 0)
+        selector_layout.addWidget(self.combo, 0, 1)
+        selector_layout.addWidget(self.model2_label, 1, 0)
+        selector_layout.addWidget(self.compare_model_combo, 1, 1)
+        selector_layout.addWidget(self.model3_label, 2, 0)
+        selector_layout.addWidget(self.compare_model_combo_2, 2, 1)
+
+        left_layout.addWidget(selector_widget, alignment=Qt.AlignCenter)
         left_layout.addWidget(self.start_btn, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.open_btn, alignment=Qt.AlignCenter)
         left_layout.addWidget(self.back_btn, alignment=Qt.AlignCenter)
         root.addWidget(left_widget, 1)
 
         right_widget = QWidget(self)
+        right_widget.setStyleSheet(PANEL_STYLE)
         right_layout = QVBoxLayout(right_widget)
-        self.result_table = QTableWidget(6, 3, self)
-        self.result_table.setHorizontalHeaderLabels(["指标", "模型1", "模型2"])
+        right_layout.setContentsMargins(12, 12, 12, 12)
+        right_layout.setSpacing(10)
+        self.result_table = QTableWidget(6, 4, self)
+        self.result_table.setHorizontalHeaderLabels(["指标", "模型1", "模型2", "模型3"])
         self.result_table.verticalHeader().setVisible(False)
         self.result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.result_table.setSelectionMode(QTableWidget.NoSelection)
+        self.result_table.setAlternatingRowColors(True)
+        self.result_table.setStyleSheet(
+            "QTableWidget {"
+            "background:#fbfdff;"
+            "alternate-background-color:#f1f6fb;"
+            "gridline-color:#d7e2ee;"
+            "border:1px solid #d7e2ee;"
+            "border-radius:8px;"
+            "color:#23364a;"
+            "font-size:13px;"
+            "}"
+            "QHeaderView::section {"
+            "background:#dfeaf6;"
+            "color:#1f3347;"
+            "padding:6px;"
+            "border:none;"
+            "border-bottom:1px solid #c8d7e8;"
+            "font-weight:600;"
+            "}"
+        )
 
         metric_names = ["MSE", "MAE", "UQI", "LPIPS", "推理耗时(s)", "样本数"]
         for i, name in enumerate(metric_names):
             self.result_table.setItem(i, 0, QTableWidgetItem(name))
             self.result_table.setItem(i, 1, QTableWidgetItem("--"))
             self.result_table.setItem(i, 2, QTableWidgetItem("--"))
+            self.result_table.setItem(i, 3, QTableWidgetItem("--"))
 
-        self.table_hint = QLabel("请选择模型后点击“显示指标页面”开始运行测试并刷新结果", self)
+        self.table_hint = QLabel("请选择模型后点击“重新计算并刷新”开始运行测试", self)
         self.table_hint.setAlignment(Qt.AlignCenter)
-        self.table_hint.setStyleSheet("color:#6b7280;")
+        self.table_hint.setStyleSheet("color:#5b6f83; font-size:12px; padding:4px 0;")
         self.run_log = QPlainTextEdit(self)
         self.run_log.setReadOnly(True)
         self.run_log.setPlaceholderText("运行日志将在这里显示")
         self.run_log.setMinimumHeight(180)
+        self.run_log.setStyleSheet(
+            "QPlainTextEdit {"
+            "background:#0f1a26;"
+            "color:#d7e7ff;"
+            "border:1px solid #24384d;"
+            "border-radius:8px;"
+            "padding:8px;"
+            "font-family:Consolas, 'Courier New', monospace;"
+            "font-size:12px;"
+            "}"
+        )
         right_layout.addWidget(self.result_table)
         right_layout.addWidget(self.table_hint)
         right_layout.addWidget(self.run_log)
@@ -640,8 +804,10 @@ class MetricAnalysisView(QWidget):
 
         self.setLayout(root)
         self.start_btn.clicked.connect(self._on_show_metrics)
+        self.open_btn.clicked.connect(self._on_open_existing_file)
         self.combo.currentTextChanged.connect(self._on_model_selection_changed)
         self.compare_model_combo.currentTextChanged.connect(self._on_model_selection_changed)
+        self.compare_model_combo_2.currentTextChanged.connect(self._on_model_selection_changed)
         self._refresh_table_headers()
         self._try_render_from_cache(prefer_disk=True)
         self.back_btn.clicked.connect(self.back_requested.emit)
@@ -651,6 +817,7 @@ class MetricAnalysisView(QWidget):
             "指标",
             self.combo.currentText(),
             self.compare_model_combo.currentText(),
+            self.compare_model_combo_2.currentText(),
         ])
 
     def _method_to_alias_candidates(self, method_name):
@@ -661,8 +828,8 @@ class MetricAnalysisView(QWidget):
         }
         return fixed_mapping.get(method_name, [method_name])
 
-    def _pair_cache_key(self, model1_name, model2_name):
-        return f"CurveFaultA|{model1_name}|{model2_name}"
+    def _pair_cache_key(self, model1_name, model2_name, model3_name):
+        return f"CurveFaultA|{model1_name}|{model2_name}|{model3_name}"
 
     def _pair_cache_file(self, pair_key):
         digest = hashlib.md5(pair_key.encode("utf-8")).hexdigest()
@@ -709,29 +876,55 @@ class MetricAnalysisView(QWidget):
             payload = json.load(f)
         return payload if isinstance(payload, dict) else None
 
-    def _build_pair_entry(self, snapshot, model1_name, model2_name):
+    def _build_pair_entry(self, snapshot, model1_name, model2_name, model3_name):
         rows = list(snapshot.get("rows_by_alias", {}).values())
         model1_row = self._pick_row_for_method(rows, model1_name)
         model2_row = self._pick_row_for_method(rows, model2_name)
-        if model1_row is None or model2_row is None:
+        model3_row = self._pick_row_for_method(rows, model3_name)
+        if model1_row is None or model2_row is None or model3_row is None:
             raise ValueError(
-                f"缓存中未找到所选模型结果: {model1_name}={bool(model1_row)}, {model2_name}={bool(model2_row)}"
+                f"缓存中未找到所选模型结果: {model1_name}={bool(model1_row)}, {model2_name}={bool(model2_row)}, {model3_name}={bool(model3_row)}"
             )
 
         return {
-            "pair_key": self._pair_cache_key(model1_name, model2_name),
+            "pair_key": self._pair_cache_key(model1_name, model2_name, model3_name),
             "dataset": "CurveFaultA",
             "model1": model1_name,
             "model2": model2_name,
+            "model3": model3_name,
             "csv": snapshot.get("csv", {}),
             "refreshed_at": snapshot.get("refreshed_at", ""),
             "metrics": {
-                "mse": [self._format_metric(model1_row, "mse_mean"), self._format_metric(model2_row, "mse_mean")],
-                "mae": [self._format_metric(model1_row, "mae_mean"), self._format_metric(model2_row, "mae_mean")],
-                "uqi": [self._format_metric(model1_row, "uqi_mean"), self._format_metric(model2_row, "uqi_mean")],
-                "lpips": [self._format_metric(model1_row, "lpips_mean"), self._format_metric(model2_row, "lpips_mean")],
-                "time": [self._format_metric(model1_row, "per_sample_seconds"), self._format_metric(model2_row, "per_sample_seconds")],
-                "sample_count": [self._format_metric(model1_row, "sample_count"), self._format_metric(model2_row, "sample_count")],
+                "mse": [
+                    self._format_metric(model1_row, "mse_mean"),
+                    self._format_metric(model2_row, "mse_mean"),
+                    self._format_metric(model3_row, "mse_mean"),
+                ],
+                "mae": [
+                    self._format_metric(model1_row, "mae_mean"),
+                    self._format_metric(model2_row, "mae_mean"),
+                    self._format_metric(model3_row, "mae_mean"),
+                ],
+                "uqi": [
+                    self._format_metric(model1_row, "uqi_mean"),
+                    self._format_metric(model2_row, "uqi_mean"),
+                    self._format_metric(model3_row, "uqi_mean"),
+                ],
+                "lpips": [
+                    self._format_metric(model1_row, "lpips_mean"),
+                    self._format_metric(model2_row, "lpips_mean"),
+                    self._format_metric(model3_row, "lpips_mean"),
+                ],
+                "time": [
+                    self._format_metric(model1_row, "per_sample_seconds"),
+                    self._format_metric(model2_row, "per_sample_seconds"),
+                    self._format_metric(model3_row, "per_sample_seconds"),
+                ],
+                "sample_count": [
+                    self._format_metric(model1_row, "sample_count"),
+                    self._format_metric(model2_row, "sample_count"),
+                    self._format_metric(model3_row, "sample_count"),
+                ],
             },
         }
 
@@ -744,6 +937,51 @@ class MetricAnalysisView(QWidget):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(entry, f, ensure_ascii=False, indent=2)
 
+    def _download_csv_copy(self, src_csv_path):
+        if not src_csv_path or not os.path.exists(src_csv_path):
+            QMessageBox.information(self, "下载提示", "缓存关联的CSV文件不存在，无法下载。")
+            return
+
+        default_name = os.path.basename(src_csv_path)
+        save_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "下载缓存CSV",
+            os.path.join(self._metric_results_dir, default_name),
+            "CSV (*.csv)",
+        )
+        if not save_path:
+            return
+        if not save_path.lower().endswith(".csv"):
+            save_path += ".csv"
+
+        shutil.copy2(src_csv_path, save_path)
+        QMessageBox.information(self, "下载完成", f"已保存到:\n{save_path}")
+
+    def _prompt_download_if_cached(self):
+        model1_name = self.combo.currentText()
+        model2_name = self.compare_model_combo.currentText()
+        model3_name = self.compare_model_combo_2.currentText()
+        pair_key = self._pair_cache_key(model1_name, model2_name, model3_name)
+
+        entry = self._memory_pair_cache.get(pair_key) or self._load_pair_cache_from_disk(pair_key)
+        if not entry:
+            return False
+
+        csv_meta = entry.get("csv", {})
+        csv_name = csv_meta.get("name", "未知CSV")
+        self.table_hint.setText(f"检测到缓存结果: {csv_name}")
+        choose = QMessageBox.question(
+            self,
+            "缓存提示",
+            f"当前模型组合已有缓存结果（{csv_name}）。\n是否下载该缓存对应CSV文件？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if choose == QMessageBox.Yes:
+            self._download_csv_copy(csv_meta.get("path"))
+            return True
+        return True
+
     def _load_pair_cache_from_disk(self, pair_key):
         path = self._pair_cache_file(pair_key)
         if not os.path.exists(path):
@@ -752,14 +990,77 @@ class MetricAnalysisView(QWidget):
             payload = json.load(f)
         return payload if isinstance(payload, dict) else None
 
+    def _load_metrics_from_csv_path(self, csv_path, source_tag="已有文件"):
+        with open(csv_path, "r", encoding="utf-8", newline="") as f:
+            rows = list(csv.DictReader(f))
+        if not rows:
+            raise ValueError("所选CSV为空")
+
+        snapshot = self._build_snapshot_payload(rows, csv_path)
+        self._memory_snapshot = snapshot
+        self._save_snapshot_cache(snapshot)
+
+        model1_name = self.combo.currentText()
+        model2_name = self.compare_model_combo.currentText()
+        model3_name = self.compare_model_combo_2.currentText()
+        pair_entry = self._build_pair_entry(snapshot, model1_name, model2_name, model3_name)
+        pair_key = pair_entry["pair_key"]
+        self._memory_pair_cache[pair_key] = pair_entry
+        self._save_pair_cache(pair_entry)
+        self._apply_pair_entry_to_table(pair_entry, source_tag=source_tag)
+
+    def _clear_metric_table_values(self):
+        for row in range(self.result_table.rowCount()):
+            self.result_table.setItem(row, 1, QTableWidgetItem("--"))
+            self.result_table.setItem(row, 2, QTableWidgetItem("--"))
+            self.result_table.setItem(row, 3, QTableWidgetItem("--"))
+
+    def _on_open_existing_file(self):
+        if self._prompt_download_if_cached():
+            return
+
+        default_dir = self._metric_results_dir if os.path.isdir(self._metric_results_dir) else self._project_root
+        candidates = glob.glob(os.path.join(self._metric_results_dir, "[[]CompareBatch[]]CurveFaultA_*.csv"))
+        if not candidates:
+            has_cache = self._try_render_from_cache(prefer_disk=True)
+            if not has_cache:
+                self._clear_metric_table_values()
+                QMessageBox.information(
+                    self,
+                    "文件提示",
+                    "未找到可打开的对比文件，且当前无缓存数据。\n请点击“重新计算并刷新”生成结果。",
+                )
+                self.table_hint.setText("未找到可打开文件且缓存为空，请点击“重新计算并刷新”")
+            else:
+                QMessageBox.information(self, "文件提示", "未找到已有文件，已保留缓存结果。")
+            return
+
+        csv_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "打开已有指标文件",
+            default_dir,
+            "CSV (*.csv)",
+        )
+        if not csv_path:
+            return
+
+        self.run_log.clear()
+        self._append_run_log(f"打开已有文件: {csv_path}")
+        try:
+            self._load_metrics_from_csv_path(csv_path, source_tag="打开已有文件")
+            self._append_run_log("已有文件加载完成")
+        except Exception as e:
+            self._append_run_log(f"ERROR: {e}")
+            self.table_hint.setText(f"加载已有文件失败: {e}")
+
     def _apply_pair_entry_to_table(self, entry, source_tag):
         metrics = entry.get("metrics", {})
-        self._set_metric_row(0, *metrics.get("mse", ["--", "--"]))
-        self._set_metric_row(1, *metrics.get("mae", ["--", "--"]))
-        self._set_metric_row(2, *metrics.get("uqi", ["--", "--"]))
-        self._set_metric_row(3, *metrics.get("lpips", ["--", "--"]))
-        self._set_metric_row(4, *metrics.get("time", ["--", "--"]))
-        self._set_metric_row(5, *metrics.get("sample_count", ["--", "--"]))
+        self._set_metric_row(0, *self._normalize_metric_values(metrics.get("mse", [])))
+        self._set_metric_row(1, *self._normalize_metric_values(metrics.get("mae", [])))
+        self._set_metric_row(2, *self._normalize_metric_values(metrics.get("uqi", [])))
+        self._set_metric_row(3, *self._normalize_metric_values(metrics.get("lpips", [])))
+        self._set_metric_row(4, *self._normalize_metric_values(metrics.get("time", [])))
+        self._set_metric_row(5, *self._normalize_metric_values(metrics.get("sample_count", [])))
 
         csv_meta = entry.get("csv", {})
         csv_name = csv_meta.get("name") or "未知CSV"
@@ -773,7 +1074,8 @@ class MetricAnalysisView(QWidget):
     def _try_render_from_cache(self, prefer_disk=False):
         model1_name = self.combo.currentText()
         model2_name = self.compare_model_combo.currentText()
-        pair_key = self._pair_cache_key(model1_name, model2_name)
+        model3_name = self.compare_model_combo_2.currentText()
+        pair_key = self._pair_cache_key(model1_name, model2_name, model3_name)
 
         cached = self._memory_pair_cache.get(pair_key)
         if cached:
@@ -795,7 +1097,7 @@ class MetricAnalysisView(QWidget):
 
         if snapshot:
             try:
-                entry = self._build_pair_entry(snapshot, model1_name, model2_name)
+                entry = self._build_pair_entry(snapshot, model1_name, model2_name, model3_name)
                 self._memory_pair_cache[pair_key] = entry
                 self._save_pair_cache(entry)
                 self._apply_pair_entry_to_table(entry, source_tag="快照缓存")
@@ -871,9 +1173,16 @@ class MetricAnalysisView(QWidget):
                 return row
         return None
 
-    def _set_metric_row(self, row_index, model1_val, model2_val):
+    def _normalize_metric_values(self, values):
+        data = list(values) if isinstance(values, (list, tuple)) else []
+        while len(data) < 3:
+            data.append("--")
+        return data[:3]
+
+    def _set_metric_row(self, row_index, model1_val, model2_val, model3_val):
         self.result_table.setItem(row_index, 1, QTableWidgetItem(model1_val))
         self.result_table.setItem(row_index, 2, QTableWidgetItem(model2_val))
+        self.result_table.setItem(row_index, 3, QTableWidgetItem(model3_val))
 
     def _format_metric(self, row, key):
         if row is None:
@@ -904,17 +1213,7 @@ class MetricAnalysisView(QWidget):
             if not rows:
                 raise ValueError("对比结果文件为空")
 
-            snapshot = self._build_snapshot_payload(rows, csv_path)
-            self._memory_snapshot = snapshot
-            self._save_snapshot_cache(snapshot)
-
-            model1_name = self.combo.currentText()
-            model2_name = self.compare_model_combo.currentText()
-            pair_entry = self._build_pair_entry(snapshot, model1_name, model2_name)
-            pair_key = pair_entry["pair_key"]
-            self._memory_pair_cache[pair_key] = pair_entry
-            self._save_pair_cache(pair_entry)
-            self._apply_pair_entry_to_table(pair_entry, source_tag="实时计算")
+            self._load_metrics_from_csv_path(csv_path, source_tag="实时计算")
 
             self._append_run_log("model_test.py 运行完成")
         except Exception as e:
@@ -935,6 +1234,10 @@ class CompareView(QWidget):
         super().__init__(parent)
         self._image_pixmaps = {}
         self._cached_compare = {}
+        self._project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        self._dataset_name = DEFAULT_DATASET_NAME
+        self._model_runtime_cache = {}
+        self._manual_model_paths = {"A": None, "B": None}
         self._last_export_dir = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
             "results",
@@ -943,91 +1246,207 @@ class CompareView(QWidget):
 
     def _build_ui(self):
         root = QHBoxLayout(self)
+        root.setContentsMargins(16, 12, 16, 12)
+        root.setSpacing(14)
         left_widget = QWidget(self)
+        left_widget.setStyleSheet(PANEL_STYLE)
         left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(18, 16, 18, 16)
+        left_layout.setSpacing(12)
 
-        self.combo = QComboBox(self)
-        self.combo.addItems(["SEGSalt", "SEGSimulation", "FlatVelA", "CurveFaultA", "FlatFaultA", "CurveVelA"])
+        self.dataset_label = QLabel(f"数据集：{self._dataset_name}", self)
+        self.dataset_label.setAlignment(Qt.AlignCenter)
+        self.dataset_label.setStyleSheet("color:#1a3550; font-size:13px; font-weight:600;")
+        self.dataset_path_hint = QLabel("", self)
+        self.dataset_path_hint.setWordWrap(True)
+        self.dataset_path_hint.setStyleSheet("color:#5b6f83; font-size:11px;")
 
-        self.start_btn = BaseButton("Test", self, color="#1E90FF", radius=8)
-        self.pd_btn = BaseButton("PD", self, color="#1E90FF", radius=8)
-        self.gt_btn = BaseButton("GT", self, color="#1E90FF", radius=8)
-        self.back_btn = BaseButton("返回", self, color="#1E90FF", radius=8)
+        self.strategy_a_label = QLabel("策略A", self)
+        self.strategy_a_combo = QComboBox(self)
+        self.strategy_a_combo.addItems(["Scratch", "Sup-Mig", "Self-Sup"])
+        _apply_combo_style(self.strategy_a_combo)
+        self.strategy_a_file_btn = BaseButton("选择模型文件", self, color="#2c7fb8", radius=8)
+        self.strategy_a_path_hint = QLabel("", self)
+        self.strategy_a_path_hint.setWordWrap(True)
+        self.strategy_a_path_hint.setStyleSheet("color:#5b6f83; font-size:11px;")
+
+        self.strategy_b_label = QLabel("策略B", self)
+        self.strategy_b_combo = QComboBox(self)
+        self.strategy_b_combo.addItems(["Sup-Mig", "Scratch", "Self-Sup"])
+        _apply_combo_style(self.strategy_b_combo)
+        self.strategy_b_file_btn = BaseButton("选择模型文件", self, color="#2c7fb8", radius=8)
+        self.strategy_b_path_hint = QLabel("", self)
+        self.strategy_b_path_hint.setWordWrap(True)
+        self.strategy_b_path_hint.setStyleSheet("color:#5b6f83; font-size:11px;")
+        self.strategy_a_label.setStyleSheet("color:#1a3550; font-size:13px; font-weight:600;")
+        self.strategy_b_label.setStyleSheet("color:#1a3550; font-size:13px; font-weight:600;")
+
+        self.start_btn = BaseButton("运行对比", self, color="#2c7fb8", radius=10)
+        self.pd_btn = BaseButton("显示PD-A", self, color="#1f9d8a", radius=10)
+        self.gt_btn = BaseButton("显示GT", self, color="#60798f", radius=10)
+        self.pd_b_btn = BaseButton("显示PD-B", self, color="#d9822b", radius=10)
+        self.back_btn = BaseButton("返回", self, color="#60798f", radius=10)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
+        btn_row.addWidget(self.gt_btn)
+        btn_row.addSpacing(10)
         btn_row.addWidget(self.pd_btn)
         btn_row.addSpacing(10)
-        btn_row.addWidget(self.gt_btn)
+        btn_row.addWidget(self.pd_b_btn)
         btn_row.addStretch()
 
-        left_layout.addWidget(self.combo, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.dataset_label, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.dataset_path_hint)
+        left_layout.addWidget(self.strategy_a_label, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.strategy_a_combo, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.strategy_a_file_btn, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.strategy_a_path_hint)
+        left_layout.addWidget(self.strategy_b_label, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.strategy_b_combo, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.strategy_b_file_btn, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.strategy_b_path_hint)
         left_layout.addWidget(self.start_btn, alignment=Qt.AlignCenter)
         left_layout.addLayout(btn_row)
+        self.compare_hint = QLabel("请选择策略后，点击“运行对比”开始实验", self)
+        self.compare_hint.setAlignment(Qt.AlignCenter)
+        self.compare_hint.setStyleSheet("color:#5b6f83; font-size:12px; padding:4px 0;")
+        left_layout.addWidget(self.compare_hint, alignment=Qt.AlignCenter)
         left_layout.addWidget(self.back_btn, alignment=Qt.AlignCenter)
 
         root.addWidget(left_widget)
 
         # 右侧
         right_widget = QWidget(self)
+        right_widget.setStyleSheet(PANEL_STYLE)
         right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(10, 10, 10, 10)
 
         img_col = QVBoxLayout()
         img_col.setContentsMargins(12, 12, 12, 12)
-        img_col.setSpacing(14)
+        img_col.setSpacing(10)
 
-        self.pd_label = ClickableLabel("PD")
         self.gt_label = ClickableLabel("GT")
+        self.pd_a_label = ClickableLabel("PD-A")
+        self.pd_b_label = ClickableLabel("PD-B")
 
-        for lbl in [self.pd_label, self.gt_label]:
+        for lbl in [self.gt_label, self.pd_a_label, self.pd_b_label]:
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setMinimumSize(260, 240)
+            lbl.setMinimumSize(260, 200)
             lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             lbl.setStyleSheet(
-                "border:1px solid #c7d0db;"
-                "background:#f8fbff;"
+                "border:1px solid #c7d7e6;"
+                "border-radius:10px;"
+                "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #edf4fc);"
                 "color:#2f3b4a;"
             )
 
-        img_col.addWidget(self.pd_label, 1)
         img_col.addWidget(self.gt_label, 1)
+        img_col.addWidget(self.pd_a_label, 1)
+        img_col.addWidget(self.pd_b_label, 1)
         right_layout.addLayout(img_col)
+
+        self.run_log = QPlainTextEdit(self)
+        self.run_log.setReadOnly(True)
+        self.run_log.setPlaceholderText("终端运行信息将在这里显示")
+        self.run_log.setMinimumHeight(150)
+        self.run_log.setStyleSheet(
+            "QPlainTextEdit {"
+            "background:#0f1a26;"
+            "color:#d7e7ff;"
+            "border:1px solid #24384d;"
+            "border-radius:8px;"
+            "padding:8px;"
+            "font-family:Consolas, 'Courier New', monospace;"
+            "font-size:12px;"
+            "}"
+        )
+        right_layout.addWidget(self.run_log)
 
         root.addWidget(right_widget, 2)
 
-        self.start_btn.clicked.connect(self.show_pd)
+        self.start_btn.clicked.connect(self._run_strategy_compare)
+        self.strategy_a_file_btn.clicked.connect(lambda: self._choose_model_file("A"))
+        self.strategy_b_file_btn.clicked.connect(lambda: self._choose_model_file("B"))
         self.pd_btn.clicked.connect(self.show_pd)
         self.gt_btn.clicked.connect(self.show_gt)
+        self.pd_b_btn.clicked.connect(self.show_pd_b)
         self.back_btn.clicked.connect(self.back_requested.emit)
-        self.pd_label.clicked.connect(lambda: self._show_zoom(self.pd_label, "PD"))
         self.gt_label.clicked.connect(lambda: self._show_zoom(self.gt_label, "GT"))
+        self.pd_a_label.clicked.connect(lambda: self._show_zoom(self.pd_a_label, "PD-A"))
+        self.pd_b_label.clicked.connect(lambda: self._show_zoom(self.pd_b_label, "PD-B"))
+        self.strategy_a_combo.currentTextChanged.connect(self._on_compare_selection_changed)
+        self.strategy_b_combo.currentTextChanged.connect(self._on_compare_selection_changed)
 
-        # 默认优先展示测试数据
-        self.show_pd()
+        self._refresh_compare_path_hints()
+        self._set_compare_placeholders()
 
     def show_pd(self):
-        self._update_compare_images(focus="pd", pd_mode="test", gt_mode="train")
-        self.pd_label.setStyleSheet(
-            "border:2px solid #1e90ff;"
-            "background:#f8fbff;"
+        if not self._update_compare_images(focus="pd_a", allow_compute=False):
+            self.compare_hint.setText("当前组合暂无结果，请先点击“运行对比”")
+            return
+        self.pd_a_label.setStyleSheet(
+            "border:2px solid #1f9d8a;"
+            "border-radius:10px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #edf4fc);"
             "color:#2f3b4a;"
         )
         self.gt_label.setStyleSheet(
-            "border:1px solid #c7d0db;"
-            "background:#f8fbff;"
+            "border:1px solid #c7d7e6;"
+            "border-radius:10px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #edf4fc);"
+            "color:#2f3b4a;"
+        )
+        self.pd_b_label.setStyleSheet(
+            "border:1px solid #c7d7e6;"
+            "border-radius:10px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #edf4fc);"
             "color:#2f3b4a;"
         )
 
     def show_gt(self):
-        self._update_compare_images(focus="gt", pd_mode="test", gt_mode="train")
+        if not self._update_compare_images(focus="gt", allow_compute=False):
+            self.compare_hint.setText("当前组合暂无结果，请先点击“运行对比”")
+            return
         self.gt_label.setStyleSheet(
-            "border:2px solid #1e90ff;"
-            "background:#f8fbff;"
+            "border:2px solid #60798f;"
+            "border-radius:10px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #edf4fc);"
             "color:#2f3b4a;"
         )
-        self.pd_label.setStyleSheet(
-            "border:1px solid #c7d0db;"
-            "background:#f8fbff;"
+        self.pd_a_label.setStyleSheet(
+            "border:1px solid #c7d7e6;"
+            "border-radius:10px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #edf4fc);"
+            "color:#2f3b4a;"
+        )
+        self.pd_b_label.setStyleSheet(
+            "border:1px solid #c7d7e6;"
+            "border-radius:10px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #edf4fc);"
+            "color:#2f3b4a;"
+        )
+
+    def show_pd_b(self):
+        if not self._update_compare_images(focus="pd_b", allow_compute=False):
+            self.compare_hint.setText("当前组合暂无结果，请先点击“运行对比”")
+            return
+        self.pd_b_label.setStyleSheet(
+            "border:2px solid #d9822b;"
+            "border-radius:10px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #edf4fc);"
+            "color:#2f3b4a;"
+        )
+        self.gt_label.setStyleSheet(
+            "border:1px solid #c7d7e6;"
+            "border-radius:10px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #edf4fc);"
+            "color:#2f3b4a;"
+        )
+        self.pd_a_label.setStyleSheet(
+            "border:1px solid #c7d7e6;"
+            "border-radius:10px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #edf4fc);"
             "color:#2f3b4a;"
         )
 
@@ -1085,7 +1504,7 @@ class CompareView(QWidget):
             return
 
         os.makedirs(self._last_export_dir, exist_ok=True)
-        dataset_name = self.combo.currentText()
+        dataset_name = self._dataset_name
         default_name = f"{dataset_name}_{title.lower()}.png"
         save_path, _ = QFileDialog.getSaveFileName(
             parent or self,
@@ -1100,7 +1519,71 @@ class CompareView(QWidget):
         pixmap.save(save_path)
 
     def _on_show_loss(self):
-        self._update_compare_images(focus=None, pd_mode="test", gt_mode="train")
+        self._run_strategy_compare()
+
+    def _current_compare_key(self):
+        return (self._dataset_name, self.strategy_a_combo.currentText(), self.strategy_b_combo.currentText(), self._manual_model_paths.get("A"), self._manual_model_paths.get("B"))
+
+    def _set_compare_placeholders(self):
+        for label, name in [(self.gt_label, "GT"), (self.pd_a_label, "PD-A"), (self.pd_b_label, "PD-B")]:
+            label.clear()
+            label.setText(name)
+
+    def _append_compare_log(self, text):
+        if not text:
+            return
+        self.run_log.appendPlainText(text)
+        bar = self.run_log.verticalScrollBar()
+        bar.setValue(bar.maximum())
+        QApplication.processEvents()
+
+    def _short_path_with_parents(self, path, parent_count=3):
+        if not path:
+            return "(未找到)"
+        norm = os.path.normpath(path)
+        parts = norm.split(os.sep)
+        need = parent_count + 1
+        if len(parts) <= need:
+            return norm
+        return "..." + os.sep + os.sep.join(parts[-need:])
+
+    def _refresh_compare_path_hints(self):
+        dataset_name = self._dataset_name
+        dataset_dir = self._dataset_dir(dataset_name)
+        self.dataset_path_hint.setText(f"数据路径: {self._short_path_with_parents(dataset_dir, parent_count=3)}")
+
+        path_a = self._manual_model_paths.get("A") or self._find_latest_model_path(dataset_name, self.strategy_a_combo.currentText())
+        path_b = self._manual_model_paths.get("B") or self._find_latest_model_path(dataset_name, self.strategy_b_combo.currentText())
+        suffix_a = "(手动)" if self._manual_model_paths.get("A") else ""
+        suffix_b = "(手动)" if self._manual_model_paths.get("B") else ""
+        self.strategy_a_path_hint.setText(f"策略A模型{suffix_a}: {self._short_path_with_parents(path_a, parent_count=3)}")
+        self.strategy_b_path_hint.setText(f"策略B模型{suffix_b}: {self._short_path_with_parents(path_b, parent_count=3)}")
+
+    def _choose_model_file(self, slot):
+        start_dir = os.path.join(self._project_root, "results", f"{self._dataset_name}Results")
+        if not os.path.isdir(start_dir):
+            start_dir = self._project_root
+        model_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择模型文件",
+            start_dir,
+            "Model (*.pkl)",
+        )
+        if not model_path:
+            return
+        self._manual_model_paths[slot] = model_path
+        self._refresh_compare_path_hints()
+        self._set_compare_placeholders()
+        self.compare_hint.setText(f"已设置策略{slot}手动模型，点击“运行对比”开始实验")
+
+    def _on_compare_selection_changed(self, *_):
+        self._refresh_compare_path_hints()
+        if self._update_compare_images(focus=None, allow_compute=False):
+            self.compare_hint.setText("已加载缓存结果（未重新实验）")
+            self.show_gt()
+        else:
+            self._set_compare_placeholders()
+            self.compare_hint.setText("策略已更新，点击“运行对比”开始实验")
 
     def _dataset_cfg(self, dataset_name):
         if dataset_name in ["SEGSalt", "SEGSimulation"]:
@@ -1111,13 +1594,13 @@ class CompareView(QWidget):
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         return os.path.join(root, "data", dataset_name) + os.sep
 
-    def _load_velocity_model(self, dataset_name, train_or_test):
+    def _load_compare_sample(self, dataset_name, train_or_test="test"):
         cfg = self._dataset_cfg(dataset_name)
         select_id = cfg["default_select_id"]
         data_dir = self._dataset_dir(dataset_name)
 
         if dataset_name in ["SEGSalt", "SEGSimulation"]:
-            _, velocity_model, _ = single_read_matfile(
+            seismic_data, velocity_model, _ = single_read_matfile(
                 data_dir,
                 cfg["data_dim"],
                 cfg["model_dim"],
@@ -1125,29 +1608,77 @@ class CompareView(QWidget):
                 train_or_test=train_or_test,
             )
             max_velocity, min_velocity = np.max(velocity_model), np.min(velocity_model)
+            velocity_model_norm = np.asarray(velocity_model, dtype=np.float32)
         else:
-            _, velocity_model, _ = single_read_npyfile(
+            seismic_data, velocity_model, _ = single_read_npyfile(
                 data_dir,
                 select_id,
                 train_or_test=train_or_test,
             )
             max_velocity, min_velocity = np.max(velocity_model), np.min(velocity_model)
-            velocity_model = (velocity_model - np.min(velocity_model)) / (np.max(velocity_model) - np.min(velocity_model) + 1e-8)
+            velocity_model_norm = (velocity_model - np.min(velocity_model)) / (np.max(velocity_model) - np.min(velocity_model) + 1e-8)
 
-        velocity_model = np.asarray(velocity_model)
-        if velocity_model.size == 0:
+        velocity_model_norm = np.asarray(velocity_model_norm)
+        if velocity_model_norm.size == 0:
             raise ValueError(f"读取文件内容为空: dataset={dataset_name}, mode={train_or_test}")
 
-        return velocity_model.astype(np.float32), float(min_velocity), float(max_velocity)
+        return np.asarray(seismic_data, dtype=np.float32), velocity_model_norm.astype(np.float32), float(min_velocity), float(max_velocity)
+
+    def _method_root_dir(self, dataset_name, method_name):
+        base = os.path.join(self._project_root, "results", f"{dataset_name}Results")
+        if dataset_name != "CurveFaultA":
+            return None
+        mapping = {
+            "Scratch": os.path.join(base, "unused_pretrain", "DDNet70", "CurveFaultA"),
+            "Sup-Mig": os.path.join(base, "used_pretrain", "DDNet70", "CurveFaultA"),
+            "Self-Sup": os.path.join(base, "self_sup", "DDNet70", "CurveFaultA"),
+        }
+        return mapping.get(method_name)
+
+    def _find_latest_model_path(self, dataset_name, method_name):
+        root = self._method_root_dir(dataset_name, method_name)
+        if not root or not os.path.isdir(root):
+            return None
+
+        matches = []
+        for cur_root, _, files in os.walk(root):
+            for name in files:
+                if name.lower().endswith(".pkl"):
+                    full = os.path.join(cur_root, name)
+                    matches.append((os.path.getmtime(full), full))
+        if not matches:
+            return None
+        matches.sort(key=lambda x: x[0], reverse=True)
+        return matches[0][1]
+
+    def _predict_velocity_by_method(self, dataset_name, seismic_data, method_name, manual_path=None):
+        model_path = manual_path if (manual_path and os.path.exists(manual_path)) else self._find_latest_model_path(dataset_name, method_name)
+        if not model_path:
+            raise FileNotFoundError(f"未找到模型文件: dataset={dataset_name}, method={method_name}")
+
+        cache_key = (model_path, int(os.path.getmtime(model_path)))
+        if cache_key not in self._model_runtime_cache:
+            model_net, device, _ = determine_network(model_path, model_type="DDNet70")
+            self._model_runtime_cache[cache_key] = (model_net, device)
+
+        model_net, device = self._model_runtime_cache[cache_key]
+        cfg = self._dataset_cfg(dataset_name)
+        seismic_tensor = torch.from_numpy(np.array([seismic_data])).float().to(device, non_blocking=device.type == "cuda")
+        model_net.eval()
+        with torch.no_grad():
+            outputs, _ = model_net(seismic_tensor, cfg["model_dim"])
+        predicted_vmod = outputs.cpu().detach().numpy()[0][0]
+        predicted_vmod = np.where(predicted_vmod > 0.0, predicted_vmod, 0.0)
+        return predicted_vmod.astype(np.float32), model_path
 
     def _build_openfwi_model_pixmap(self, model, min_v, max_v, title):
         from PyQt5.QtGui import QImage
 
-        width, height = 560, 560
+        width, height = 580, 620
         left_margin = 78
         right_margin = 36
         top_margin = 52
-        bottom_margin = 76
+        bottom_margin = 122
         plot_w = width - left_margin - right_margin
         plot_h = height - top_margin - bottom_margin
 
@@ -1190,7 +1721,7 @@ class CompareView(QWidget):
             x = left_margin + int(ratio * plot_w)
             y = top_margin + int(ratio * plot_h)
             painter.drawLine(x, top_margin + plot_h, x, top_margin + plot_h + 5)
-            painter.drawText(x - 14, top_margin + plot_h + 10, 28, 18, Qt.AlignCenter, f"{t:.1f}")
+            painter.drawText(x - 16, top_margin + plot_h + 14, 32, 20, Qt.AlignCenter, f"{t:.1f}")
             painter.drawLine(left_margin - 5, y, left_margin, y)
             painter.drawText(6, y - 9, left_margin - 14, 18, Qt.AlignRight | Qt.AlignVCenter, f"{t:.1f}")
 
@@ -1202,7 +1733,7 @@ class CompareView(QWidget):
         font.setPointSize(11)
         font.setBold(False)
         painter.setFont(font)
-        painter.drawText(left_margin, height - 32, plot_w, 20, Qt.AlignCenter, "Position (km)")
+        painter.drawText(left_margin, height - 52, plot_w, 24, Qt.AlignCenter, "Position (km)")
         painter.save()
         painter.translate(20, top_margin + plot_h // 2)
         painter.rotate(-90)
@@ -1224,47 +1755,73 @@ class CompareView(QWidget):
             )
         )
 
-    def _load_compare_data(self, dataset_name, pd_mode="test", gt_mode="train"):
-        cache_key = (dataset_name, pd_mode, gt_mode)
-        if cache_key in self._cached_compare:
+    def _load_compare_data(self, dataset_name, force_refresh=False):
+        strategy_a = self.strategy_a_combo.currentText()
+        strategy_b = self.strategy_b_combo.currentText()
+        cache_key = self._current_compare_key()
+        if (not force_refresh) and cache_key in self._cached_compare:
             return self._cached_compare[cache_key]
 
         try:
-            pd_vm, pd_min, pd_max = self._load_velocity_model(dataset_name, pd_mode)
-            gt_vm, gt_min, gt_max = self._load_velocity_model(dataset_name, gt_mode)
-            warning = ""
+            seismic_data, gt_vm_norm, min_velocity, max_velocity = self._load_compare_sample(dataset_name, train_or_test="test")
+
+            if dataset_name == "CurveFaultA":
+                pd_a_norm, path_a = self._predict_velocity_by_method(dataset_name, seismic_data, strategy_a, manual_path=self._manual_model_paths.get("A"))
+                pd_b_norm, path_b = self._predict_velocity_by_method(dataset_name, seismic_data, strategy_b, manual_path=self._manual_model_paths.get("B"))
+                warning = f"A={os.path.basename(path_a)} | B={os.path.basename(path_b)}"
+                self._append_compare_log(f"[Model-A] {self._short_path_with_parents(path_a, parent_count=3)}")
+                self._append_compare_log(f"[Model-B] {self._short_path_with_parents(path_b, parent_count=3)}")
+            else:
+                pd_a_norm = np.copy(gt_vm_norm)
+                pd_b_norm = np.copy(gt_vm_norm)
+                warning = "当前仅CurveFaultA启用策略权重推理，已回退为GT展示"
+                self._append_compare_log("当前数据集未启用策略推理，已回退为GT展示")
+
+            if dataset_name in ["SEGSalt", "SEGSimulation"]:
+                gt_show = gt_vm_norm
+                pd_a_show = pd_a_norm
+                pd_b_show = pd_b_norm
+            else:
+                gt_show = min_velocity + gt_vm_norm * (max_velocity - min_velocity)
+                pd_a_show = min_velocity + pd_a_norm * (max_velocity - min_velocity)
+                pd_b_show = min_velocity + pd_b_norm * (max_velocity - min_velocity)
+
+            min_v = float(np.min(gt_show))
+            max_v = float(np.max(gt_show))
         except Exception:
-            rng = np.random.default_rng(abs(hash((dataset_name, pd_mode, gt_mode))) % 100000)
+            rng = np.random.default_rng(abs(hash((dataset_name, strategy_a, strategy_b))) % 100000)
             gt_vm = np.clip(rng.normal(0.55, 0.2, (70, 70)), 0.0, 1.0).astype(np.float32)
-            pd_vm = np.clip(gt_vm + rng.normal(0.0, 0.06, (70, 70)), 0.0, 1.0).astype(np.float32)
-            gt_min, gt_max = 1500.0, 4500.0
-            pd_min, pd_max = gt_min, gt_max
-            warning = "文件为空或读取失败，已回退到测试数据"
+            pd_a_show = np.clip(gt_vm + rng.normal(0.0, 0.06, (70, 70)), 0.0, 1.0).astype(np.float32)
+            pd_b_show = np.clip(gt_vm + rng.normal(0.0, 0.08, (70, 70)), 0.0, 1.0).astype(np.float32)
+            gt_show = gt_vm
+            min_v = float(np.min(gt_show))
+            max_v = float(np.max(gt_show))
+            warning = "推理失败，已回退到模拟数据"
 
-        pd_show = pd_min + pd_vm * (pd_max - pd_min)
-        gt_show = gt_min + gt_vm * (gt_max - gt_min)
-
-        min_v = float(np.min(gt_min + gt_vm * (gt_max - gt_min)))
-        max_v = float(np.max(gt_min + gt_vm * (gt_max - gt_min)))
-
-        payload = {"pd": pd_show, "gt": gt_show, "min_v": min_v, "max_v": max_v, "warning": warning}
+        payload = {
+            "gt": gt_show,
+            "pd_a": pd_a_show,
+            "pd_b": pd_b_show,
+            "min_v": min_v,
+            "max_v": max_v,
+            "warning": warning,
+            "strategy_a": strategy_a,
+            "strategy_b": strategy_b,
+        }
         self._cached_compare[cache_key] = payload
         return payload
 
 
 
-    def _update_compare_images(self, focus=None, pd_mode="test", gt_mode="train"):
-        dataset_name = self.combo.currentText()
-        payload = self._load_compare_data(dataset_name, pd_mode=pd_mode, gt_mode=gt_mode)
+    def _update_compare_images(self, focus=None, force_refresh=False, allow_compute=False):
+        dataset_name = self._dataset_name
+        if allow_compute:
+            payload = self._load_compare_data(dataset_name, force_refresh=force_refresh)
+        else:
+            payload = self._cached_compare.get(self._current_compare_key())
+            if payload is None:
+                return False
 
-        if focus in (None, "pd"):
-            self._render_velocity_to_label(
-                self.pd_label,
-                payload["pd"],
-                payload["min_v"],
-                payload["max_v"],
-                f"{dataset_name} PD",
-            )
         if focus in (None, "gt"):
             self._render_velocity_to_label(
                 self.gt_label,
@@ -1273,6 +1830,41 @@ class CompareView(QWidget):
                 payload["max_v"],
                 f"{dataset_name} GT",
             )
+        if focus in (None, "pd_a"):
+            self._render_velocity_to_label(
+                self.pd_a_label,
+                payload["pd_a"],
+                payload["min_v"],
+                payload["max_v"],
+                f"{dataset_name} PD-A ({payload.get('strategy_a', 'A')})",
+            )
+        if focus in (None, "pd_b"):
+            self._render_velocity_to_label(
+                self.pd_b_label,
+                payload["pd_b"],
+                payload["min_v"],
+                payload["max_v"],
+                f"{dataset_name} PD-B ({payload.get('strategy_b', 'B')})",
+            )
+        return True
+
+    def _run_strategy_compare(self):
+        try:
+            self.run_log.clear()
+            self._append_compare_log("开始运行策略对比...")
+            self._append_compare_log(f"Dataset: {self._dataset_name}")
+            self._append_compare_log(f"Strategy-A: {self.strategy_a_combo.currentText()}")
+            self._append_compare_log(f"Strategy-B: {self.strategy_b_combo.currentText()}")
+            self._update_compare_images(focus=None, force_refresh=True, allow_compute=True)
+            payload = self._cached_compare.get(self._current_compare_key())
+            if payload:
+                self.compare_hint.setText(f"实验完成：{payload.get('warning', '')}")
+                self._append_compare_log("策略对比完成")
+            self.show_gt()
+        except Exception as e:
+            self.compare_hint.setText(f"实验失败：{e}")
+            self._append_compare_log(f"ERROR: {e}")
+            QMessageBox.warning(self, "对比失败", str(e))
 
     def _load_placeholder_image(self):
         base = os.path.dirname(__file__)
